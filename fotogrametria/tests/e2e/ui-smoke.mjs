@@ -56,8 +56,13 @@ if (FULL) {
   await page.getByText('Usar CAD de la demo').click();
   await page.getByRole('button', { name: 'Comparar', exact: true }).click();
   await page.waitForFunction(() => window.fotoApp.state.cad && window.fotoApp.state.cad.stats, null, { timeout: 600000, polling: 1000 });
-  const cad = await page.evaluate(() => { const c = window.fotoApp.state.cad; return { inTol: c.stats.inTol, rms: c.stats.rms, mean: c.stats.mean, cov: c.stats.coverage, align: c.alignInfo, icp: c.icpRms }; });
+  const cad = await page.evaluate(() => { const c = window.fotoApp.state.cad; return { inTol: c.stats.inTol, rms: c.stats.rms, mean: c.stats.mean, cov: c.stats.coverage, align: c.alignInfo, icp: c.icpRms, t: c.t.map(v => +v.toFixed(3)), Rdiag: [c.R[0], c.R[4], c.R[8]].map(v => +v.toFixed(5)) }; });
   console.log('CAD:', JSON.stringify(cad));
+  if (process.env.MESHDUMP) {
+    // malla reconstruida y CAD (coordenadas del tapete) para repetir la alineación fuera del navegador
+    const d = await page.evaluate(() => { const a = window.fotoApp, m = a.state.recon.mesh; return { p: Array.from(m.positions), i: Array.from(m.indices), cad: Array.from(a.state.cadGeo.attributes.position.array) }; });
+    fs.writeFileSync(process.env.MESHDUMP, JSON.stringify(d));
+  }
   await shot('cad');
   // textura
   await page.evaluate(() => window.fotoApp.go('viewer'));
