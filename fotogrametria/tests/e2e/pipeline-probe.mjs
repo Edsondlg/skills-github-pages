@@ -2,6 +2,7 @@
 import { openPage } from './browser.mjs';
 const opts = {
   count: +(process.env.COUNT || 12), width: +(process.env.IW || 1600), height: +(process.env.IH || 1200),
+  dump: process.env.DUMP || '',
   quality: { label: 'Prueba', coarse: +(process.env.COARSE || 320), fine: +(process.env.FINE || 640), iters: +(process.env.ITERS || 5), nsrc: +(process.env.NSRC || 4), topK: 2, voxelFactor: 1.8 },
 };
 const { page, close, logs } = await openPage('tests/e2e/harness.html');
@@ -35,7 +36,9 @@ const res = await page.evaluate(async (opts) => {
     camErr.push(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
   });
   const views = proj.registeredViews().map(p => ({ file: p.file, R: p.R, t: p.t }));
-  const rec = await reconstruct({ views, K: cal.K, board: proj.board, params: { quality: opts.quality }, keepPreviews: false });
+  window.__dumps = [];
+  const rec = await reconstruct({ views, K: cal.K, board: proj.board, params: { quality: opts.quality, sheetThickness: 2 }, keepPreviews: false, onDepthMap: opts.dump ? (d) => window.__dumps.push(d) : null });
+  window.__rec = rec; window.__gt = demo.gt;
   T.recon = performance.now() - t; t = performance.now();
   // exactitud: distancia de vértices de la malla a la geometría verdadera
   const grid = new TriangleGrid(demo.gt.positions, demo.gt.indices);
@@ -94,6 +97,20 @@ const res = await page.evaluate(async (opts) => {
   };
 }, opts);
 import fs from 'node:fs';
+if (opts.dump) {
+  // volcado binario de mapas de profundidad + verdad para iterar la fusión en Node
+  const dumps = await page.evaluate(() => window.__dumps.map(d => ({ W: d.W, H: d.H, K: d.K, R: d.R, t: d.t, index: d.index })));
+  fs.mkdirSync(opts.dump, { recursive: true });
+  fs.writeFileSync(`${opts.dump}/meta.json`, JSON.stringify({ maps: dumps, tsdfOpts: await page.evaluate(() => window.__rec.tsdfOpts) }));
+  for (let i = 0; i < dumps.length; i++) {
+    for (const key of ['depth', 'normal', 'cost', 'color']) {
+      const b64 = await page.evaluate(([i, key]) => { const a = window.__dumps[i][key]; const u8 = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = ''; for (let k = 0; k < u8.length; k += 32768) s += String.fromCharCode.apply(null, u8.subarray(k, k + 32768)); return btoa(s); }, [i, key]);
+      fs.writeFileSync(`${opts.dump}/${i}_${key}.bin`, Buffer.from(b64, 'base64'));
+    }
+  }
+  const gt = await page.evaluate(() => ({ p: Array.from(window.__gt.positions), i: Array.from(window.__gt.indices) }));
+  fs.writeFileSync(`${opts.dump}/gt.json`, JSON.stringify(gt));
+}
 (res.images || []).forEach((u, i) => fs.writeFileSync((process.env.OUTDIR || '/tmp') + `/mesh_${i}.png`, Buffer.from(u.split(',')[1], 'base64')));
 delete res.images;
 console.log(JSON.stringify(res, null, 1));

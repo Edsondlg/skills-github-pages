@@ -4,7 +4,7 @@ import { workerPool } from './workers/rpc.js';
 import { reconstruct, RECON_DEFAULTS } from './mvs/pipeline.js';
 import { computeMetrics } from './analysis/metrics.js';
 import { BOARD_DEFAULTS } from './core/board.js';
-import { h, clear, toast, setStatus, setProgress, modal, store, load } from './ui/dom.js';
+import { h, clear, toast, setStatus, setProgress, modal, store, load, confirmDialog } from './ui/dom.js';
 import { renderPatterns } from './ui/step-patterns.js';
 import { renderPhotos } from './ui/step-photos.js';
 import { renderCalib } from './ui/step-calib.js';
@@ -50,6 +50,12 @@ class App {
   // ---------- Navegación ----------
   go(step) {
     if (!STEPS[step]) step = 'patterns';
+    this.renderSeq = (this.renderSeq || 0) + 1;
+    if (step !== 'viewer' && this._viewer) {
+      this._viewer.onPick = null;
+      if (this.measure) this.measure.setMode(null);
+      if (this.state.tf) { this.state.tf = null; this._viewer.enableTransform(null); }
+    }
     this.state.step = step;
     store('step', step);
     for (const b of this.rail.querySelectorAll('.step')) b.classList.toggle('active', b.dataset.step === step);
@@ -133,7 +139,12 @@ class App {
     const order = ['photos', 'calib', 'recon', 'cad'];
     const i = order.indexOf(from);
     if (i <= 1) { this.project.calib = null; for (const p of this.project.photos) { p.registered = false; } }
-    if (i <= 2) { this.state.recon = null; if (this._viewer) { this._viewer.setMesh(null); this._viewer.setBox(null); } }
+    if (i <= 2) {
+      this.state.recon = null; this.state.undo = []; this.state.cadAligned = null; this.state.holes = null;
+      if (this.holeGroup) this.holeGroup.clear();
+      if (this._viewer) { this._viewer.setMesh(null); this._viewer.setBox(null); this._viewer.setCAD(null); this._viewer.cadSource = null; }
+      if (this.measure) this.measure.clear();
+    }
     this.state.cad = null; this.state.metrics = null;
     this.updateRail();
     this.updateStatusRight();
@@ -241,7 +252,7 @@ class App {
   cancel() { if (this.abort) this.abort.abort(); }
 
   computeMetrics() {
-    this.state.metrics = computeMetrics({ project: this.project, recon: this.state.recon, cad: this.state.cad, target: this.settings.target });
+    this.state.metrics = computeMetrics({ project: this.project, recon: this.state.recon, cad: this.state.cad, target: this.settings.target, holes: this.state.holes });
     this.updateRail();
     return this.state.metrics;
   }
@@ -269,7 +280,7 @@ class App {
   // ---------- Demostración ----------
   async runDemo({ count = 22, width = 2400, height = 1800, auto = true } = {}) {
     if (this.state.busy) return;
-    if (this.project.photos.length && !confirm('La demostración reemplaza las fotos actuales. ¿Continuar?')) return;
+    if (this.project.photos.length && !(await confirmDialog('La demostración reemplaza las fotos actuales del proyecto. ¿Continuar?', { ok: 'Reemplazar y ejecutar' }))) return;
     this.state.busy = 'photos'; this.updateRail();
     try {
       // el tapete de la demo es el A3 estándar
@@ -277,7 +288,8 @@ class App {
       this.project.clear();
       this.invalidate('photos');
       setStatus('Generando fotos sintéticas de la demostración…'); setProgress(0);
-      const { renderDemoPhotos } = await import('./demo/synth.js');
+      const { renderDemoPhotos, DEMO_PART } = await import('./demo/synth.js');
+      this.settings.recon.sheetThickness = DEMO_PART.espesor;
       const demo = await renderDemoPhotos(this.project.board, { count, width, height, onProgress: (i, n) => { setProgress(i / n); setStatus(`Renderizando foto de demostración ${i}/${n}…`); } });
       this.state.demo = demo;
       this.state.busy = null;

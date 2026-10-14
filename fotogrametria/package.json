@@ -7,6 +7,7 @@
   "scripts": {
     "test": "node --test --test-reporter=spec \"tests/unit/*.test.mjs\"",
     "test:e2e": "node tests/e2e/run-e2e.mjs",
+    "test:ui": "node tests/e2e/ui-smoke.mjs",
     "serve": "npx --yes http-server -p 8080 -c-1 ."
   }
 }

@@ -60,7 +60,10 @@ export class PhotoProject {
         p.nMat = nMat; p.nPart = r.dets.filter(d => d.id >= PART_ID_START).length;
         p.status = nMat >= 3 ? 'detectada' : 'sin tablero';
       } catch (err) {
-        p.status = 'error'; p.error = err.message;
+        p.status = 'error';
+        p.error = /\.hei[cf]$/i.test(p.name) || /hei[cf]/i.test(p.file.type || '')
+          ? 'Formato HEIC no soportado por este navegador: exporte la foto como JPG.'
+          : `No se pudo leer la imagen (${err.message}).`;
       }
       done++;
       onProgress(done / todo.length, p);
@@ -89,7 +92,7 @@ export class PhotoProject {
     const [domKey] = [...sizes.entries()].sort((a, b) => b[1] - a[1])[0];
     const [W, H] = domKey.split('x').map(Number);
     const usable = ready.filter(p => p.width === W && p.height === H);
-    for (const p of ready) if (!usable.includes(p)) { p.status = 'tamaño distinto'; p.registered = false; }
+    for (const p of ready) if (!usable.includes(p)) { p.status = 'tamaño u orientación distinta'; p.registered = false; }
     // focal inicial desde EXIF (mediana)
     const fEx = usable.map(p => focalFromExif(p.exif, W, H)).filter(f => f > 0);
     const fInit = fEx.length ? median(fEx) : null;

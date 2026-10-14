@@ -224,12 +224,37 @@ void main() {
       }
     }
     if (dot(uTable.xyz, uTable.xyz) > 0.5) {
-      float den = dot(uTable.xyz, ray);
+      vec3 up = uTable.xyz;
+      float den = dot(up, ray);
       if (den < -1e-6) {
         float d = uTable.w / den;
         if (d >= dr.x && d <= dr.y) {
-          float c = costHyp(ray, uTable.xyz, d);
-          if (c < bc) { bc = c; bn = uTable.xyz; bd = d; }
+          float c = costHyp(ray, up, d);
+          if (c < bc) { bc = c; bn = up; bd = d; }
+        }
+      }
+      if (uMode == 1) {
+        // superficies típicas de lámina estampada: planos horizontales (paralelos a la mesa) y
+        // paredes verticales, evaluados a la profundidad actual
+        float d0 = bd;
+        if (den < -1e-6) {
+          float c = costHyp(ray, up, d0);
+          if (c < bc) { bc = c; bn = up; bd = d0; }
+        }
+        vec3 vr = -normalize(ray);
+        vec3 nv = vr - dot(vr, up) * up;
+        if (dot(nv, nv) > 1e-4) {
+          nv = normalize(nv);
+          float c = costHyp(ray, nv, d0);
+          if (c < bc) { bc = c; bn = nv; bd = d0; }
+        }
+        vec3 nh = bn - dot(bn, up) * up;
+        if (dot(nh, nh) > 1e-4) {
+          nh = normalize(nh);
+          if (dot(nh, ray) < -1e-3) {
+            float c = costHyp(ray, nh, d0);
+            if (c < bc) { bc = c; bn = nh; bd = d0; }
+          }
         }
       }
     }

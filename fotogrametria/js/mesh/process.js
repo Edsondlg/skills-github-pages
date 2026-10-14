@@ -1,4 +1,7 @@
-// Post-proceso de mallas: limpieza de componentes pequeñas, suavizado de Taubin, normales y estadísticas.
+// Post-proceso de mallas: limpieza de componentes pequeñas, relleno de grietas, suavizado de Taubin,
+// normales y estadísticas.
+import { boundaryLoops } from '../analysis/features.js';
+import { eigSym } from '../core/linalg.js';
 
 // Componentes conexas por vértices compartidos (unión-búsqueda).
 export function components(nVerts, indices) {
@@ -180,4 +183,50 @@ export function projectedArea(positions, indices, cell = 0.25) {
   }
   let n = 0; for (const g of grid) n += g;
   return n * cell * cell;
+}
+
+// Rellena grietas y huecos pequeños de la reconstrucción (no los barrenos reales): lazos de borde
+// estrechos (ancho < maxWidth) o de perímetro corto, triangulados en abanico desde su centroide.
+export function fillSmallHoles(mesh, { maxWidth = 2.5, maxPerimeter = 7, maxLength = 60 } = {}) {
+  const P = mesh.positions, I = mesh.indices;
+  const nV = P.length / 3;
+  const loops = boundaryLoops(nV, I);
+  if (loops.length < 2) return { mesh, filled: 0 };
+  const per = loops.map(l => { let s = 0; for (let i = 0; i < l.length; i++) { const a = l[i], b = l[(i + 1) % l.length]; s += Math.hypot(P[3 * a] - P[3 * b], P[3 * a + 1] - P[3 * b + 1], P[3 * a + 2] - P[3 * b + 2]); } return s; });
+  const maxPer = Math.max(...per);
+  const newP = [], newIdx = [], extra = {};
+  for (const key of Object.keys(mesh)) if (key !== 'positions' && key !== 'indices' && mesh[key] && mesh[key].length && Number.isInteger(mesh[key].length / nV)) extra[key] = [];
+  let filled = 0, nNew = nV;
+  loops.forEach((l, li) => {
+    if (per[li] === maxPer || per[li] > 3 * maxLength) return;
+    const n = l.length;
+    const c = [0, 0, 0];
+    for (const v of l) { c[0] += P[3 * v] / n; c[1] += P[3 * v + 1] / n; c[2] += P[3 * v + 2] / n; }
+    const C = new Float64Array(9);
+    for (const v of l) { const d = [P[3 * v] - c[0], P[3 * v + 1] - c[1], P[3 * v + 2] - c[2]]; for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) C[a * 3 + b] += d[a] * d[b] / n; }
+    const { values } = eigSym(C, 3);
+    const length = 4 * Math.sqrt(Math.max(0, values[2])), width = 4 * Math.sqrt(Math.max(0, values[1]));
+    const narrow = width < maxWidth && length < maxLength;
+    if (!(narrow || per[li] < maxPerimeter)) return;
+    // vértice central con atributos promediados
+    newP.push(...c);
+    for (const [key, arr] of Object.entries(extra)) {
+      const src = mesh[key], k = src.length / nV;
+      for (let q = 0; q < k; q++) { let s = 0; for (const v of l) s += src[v * k + q]; arr.push(s / n); }
+    }
+    const ci = nNew++;
+    for (let i = 0; i < n; i++) newIdx.push(l[(i + 1) % n], l[i], ci);
+    filled++;
+  });
+  if (!filled) return { mesh, filled: 0 };
+  const out = { positions: new Float32Array(P.length + newP.length), indices: new Uint32Array(I.length + newIdx.length) };
+  out.positions.set(P); out.positions.set(newP, P.length);
+  out.indices.set(I); out.indices.set(newIdx, I.length);
+  for (const [key, arr] of Object.entries(extra)) {
+    const src = mesh[key];
+    const a = new src.constructor(src.length + arr.length);
+    a.set(src); a.set(arr.map(x => (src instanceof Uint8Array ? Math.round(x) : x)), src.length);
+    out[key] = a;
+  }
+  return { mesh: out, filled };
 }

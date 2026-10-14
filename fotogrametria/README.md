@@ -57,6 +57,8 @@ El sistema **mide** su propia precisión en cada proyecto, no la supone:
   objetivo (±1 mm por defecto) para emitir el veredicto «cumple / no cumple».
 - Además: % de fotos registradas, error de reproyección, cobertura angular, % de superficie vista por
   ≥ 3 fotos, % de píxeles con correspondencia confiable, nitidez, etc.
+- El **índice global** es el promedio ponderado de esos porcentajes, limitado por los indicadores de
+  exactitud: si el control 3D, el ruido o la reproyección fallan, el índice no puede salir alto.
 
 ### Validación con datos sintéticos (verdad conocida)
 
@@ -98,8 +100,9 @@ fotogrametria/
 
 ```bash
 cd fotogrametria
-npm test                 # unitarias: detector, calibración, TSDF, ICP (≈ 30 s)
-npm run test:e2e         # flujo completo en Chromium headless con GPU por software (≈ 10–15 min)
+npm test                 # unitarias: detector, calibración, TSDF, ICP, patrones, métricas (≈ 1 min)
+npm run test:e2e         # exactitud del flujo completo vs. geometría real (Chromium headless, ≈ 12 min)
+npm run test:ui          # interfaz completa con la demo: medición, CAD y textura (≈ 15 min)
 ```
 
 ## Limitaciones conocidas

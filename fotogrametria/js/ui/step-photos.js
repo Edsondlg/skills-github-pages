@@ -1,9 +1,9 @@
 // Paso 2: carga de fotos, detección de marcadores e inspección de cada foto.
-import { h, add, clear, card, kvTable, fmt, chip, toast } from './dom.js';
+import { h, add, clear, card, kvTable, fmt, chip, toast, confirmDialog } from './dom.js';
 import { projectPoint } from '../core/camera.js';
 import { PART_ID_START } from '../core/board.js';
 
-const STATUS_KIND = { 'pendiente': '', 'detectando': 'info', 'detectada': 'ok', 'registrada': 'ok', 'registrada (PnP)': 'ok', 'sin tablero': 'bad', 'error': 'bad', 'tamaño distinto': 'warn' };
+const STATUS_KIND = { 'pendiente': '', 'detectando': 'info', 'detectada': 'ok', 'registrada': 'ok', 'registrada (PnP)': 'ok', 'sin tablero': 'bad', 'error': 'bad', 'tamaño u orientación distinta': 'warn' };
 
 export function renderPhotos(app) {
   const P = app.panel;
@@ -20,7 +20,7 @@ export function renderPhotos(app) {
       h('div', { class: 'row' },
         h('button', { class: 'btn primary', onclick: () => fileInput.click() }, 'Agregar fotos…'),
         h('button', { class: 'btn', disabled: !photos.length || !!app.state.busy, onclick: () => app.runCalibration().then(() => app.go('calib')) }, 'Calibrar →'),
-        h('button', { class: 'btn ghost danger', disabled: !photos.length || !!app.state.busy, onclick: () => { if (confirm('¿Quitar todas las fotos?')) { pr.clear(); app.invalidate('photos'); app.refresh(); } } }, 'Quitar todas'),
+        h('button', { class: 'btn ghost danger', disabled: !photos.length || !!app.state.busy, onclick: async () => { if (await confirmDialog('¿Quitar todas las fotos del proyecto?', { ok: 'Quitar todas' })) { pr.clear(); app.invalidate('photos'); app.refresh(); } } }, 'Quitar todas'),
       ),
       h('div', { class: 'kpis' },
         kpi('Fotos', photos.length),
@@ -52,6 +52,7 @@ function photoInfo(app, p) {
   return card(`Foto: ${p.name}`,
     kvTable([
       ['Estado', chip(p.status, STATUS_KIND[p.status] || '')],
+      p.error ? ['Detalle', h('span', { class: 'bad-t' }, p.error)] : null,
       p.width ? ['Resolución', `${p.width} × ${p.height} px`] : null,
       ex.model ? ['Cámara', `${ex.make || ''} ${ex.model}`.trim()] : null,
       ex.focalMM ? ['Focal (EXIF)', `${fmt(ex.focalMM, 2)} mm${ex.focal35 ? ` · eq. 35 mm: ${ex.focal35} mm` : ''}`] : null,

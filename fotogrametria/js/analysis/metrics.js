@@ -9,7 +9,7 @@ function score(v, good, bad) {
   return clamp01((v - bad) / (good - bad));
 }
 
-export function computeMetrics({ project, recon = null, cad = null, target = 1.0 }) {
+export function computeMetrics({ project, recon = null, cad = null, target = 1.0, holes = null }) {
   const photos = project.photos;
   const cal = project.calib;
   const board = project.board;
@@ -63,6 +63,8 @@ export function computeMetrics({ project, recon = null, cad = null, target = 1.0
   }
   // ---------- Reconstrucción ----------
   if (recon) {
+    for (const w of recon.warnings || []) M.recs.push(w);
+    if (recon.partBox && recon.partBox.warn) M.recs.push('No se pudo aislar la pieza sobre la mesa: verifique que tenga textura (moteado) y que sobresalga de la mesa.');
     const pv = recon.perView.filter(v => !v.skipped);
     const vf = pv.length ? mean(pv.map(v => v.validFrac)) : 0;
     add('Reconstrucción', 'validez', 'Píxeles con correspondencia confiable', 100 * vf, '%', score(vf, 0.75, 0.25), `Promedio de ${pv.length} mapas de profundidad`);
@@ -78,6 +80,10 @@ export function computeMetrics({ project, recon = null, cad = null, target = 1.0
       add('Reconstrucción', 'multivista', 'Superficie vista por ≥ 3 fotos', 100 * f3, '%', score(f3, 0.9, 0.4), 'Confianza de la malla');
       if (f3 < 0.7) M.recs.push('Parte de la superficie se vio en pocas fotos: agregue fotos que cubran las caras laterales y la pestaña desde ambos lados.');
     }
+    if (recon.coverage) {
+      add('Reconstrucción', 'cobertura', 'Cobertura estimada de la pieza', 100 * recon.coverage.frac, '%', score(recon.coverage.frac, 0.95, 0.6), 'Vóxeles de la localización inicial cubiertos por la malla final');
+      if (recon.coverage.frac < 0.85) M.recs.push('Faltan zonas de la pieza en la malla (p. ej. paredes verticales o pestañas): agregue fotos más bajas (30–40°) dirigidas a esas caras y asegure que tengan textura.');
+    }
     const st = recon.meshStats;
     if (st) {
       add('Pieza', 'dim', 'Dimensiones (caja envolvente X × Y × Z)', `${st.bbox.size[0].toFixed(2)} × ${st.bbox.size[1].toFixed(2)} × ${st.bbox.size[2].toFixed(2)}`, 'mm');
@@ -86,6 +92,11 @@ export function computeMetrics({ project, recon = null, cad = null, target = 1.0
       const dens = st.vertices / Math.max(1e-6, st.area / 100);
       add('Pieza', 'densidad', 'Densidad de puntos', dens, 'pts/cm²', null, `Vóxel ${recon.voxel.toFixed(2)} mm · GSD ${recon.gsd.toFixed(3)} mm/px`);
       if (st.closed) add('Pieza', 'vol', 'Volumen (malla cerrada)', st.volume / 1000, 'cm³');
+      if (holes && holes.length) {
+        const circ = holes.filter(o => o.type === 'circular');
+        const nOpen = holes.filter(o => o.type !== 'circular' && o.section !== null).length;
+        add('Pieza', 'barrenos', 'Barrenos detectados', circ.length ? circ.map(o => `Ø${o.diameter.toFixed(2)}`).join(' · ') : 'ninguno circular', '', null, `${nOpen} abertura(s) medida(s) · ${holes.length - circ.length - nOpen} abertura(s) o hueco(s) sin pared medible`);
+      }
     }
   }
   // ---------- Incertidumbre estimada ----------
@@ -104,10 +115,13 @@ export function computeMetrics({ project, recon = null, cad = null, target = 1.0
     add('Comparación CAD', 'cad_cov', 'Cobertura del CAD por la medición', 100 * c.coverage, '%', score(c.coverage, 0.85, 0.3));
   }
   // ---------- Índice global ----------
-  const W = { registro: 1.2, rms: 1, control: 1.6, ruido: 1.4, multivista: 1.4, validez: 1, nitidez: 0.6, cobertura_img: 0.6, azimut: 0.8 };
+  const W = { registro: 1.2, rms: 1, control: 1.6, ruido: 1.4, multivista: 1.0, cobertura: 1.4, validez: 1, nitidez: 0.6, cobertura_img: 0.6, azimut: 0.8, cad_tol: 1.6, cad_cov: 1.2 };
   let sw = 0, ss = 0;
   for (const [k, w] of Object.entries(W)) if (M.scores[k] !== undefined && M.scores[k] !== null) { sw += w; ss += w * M.scores[k]; }
   M.index = sw ? ss / sw : null;
+  // los indicadores de exactitud son críticos: si uno falla, el índice no puede ser alto
+  const crit = ['control', 'ruido', 'rms'].map(k => M.scores[k]).filter(v => v !== undefined && v !== null);
+  if (M.index !== null && crit.length) M.index = Math.min(M.index, Math.min(...crit) + 0.35);
   if (M.index !== null) {
     const q = M.index;
     M.verdict = q >= 0.85 ? 'Excelente' : q >= 0.7 ? 'Buena' : q >= 0.5 ? 'Aceptable con reservas' : 'Insuficiente';

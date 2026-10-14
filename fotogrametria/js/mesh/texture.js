@@ -192,7 +192,7 @@ export async function bakeTexture({ mesh, project, atlasSize = null, depthWidth 
     let cnt = 0;
     for (const [v, [u, vv2]] of used) {
       if ((cnt++ % 7) !== 0) continue;
-      const x = Math.round((u - c.x0) * scale), y = Math.round((vv2 - c.y0) * scale);
+      const x = Math.round((u + 0.5 - c.x0) * (c.aw / c.w) - 0.5), y = Math.round((vv2 + 0.5 - c.y0) * (c.ah / c.h) - 0.5);
       if (x < 0 || y < 0 || x >= c.aw || y >= c.ah) continue;
       const o = 4 * (y * c.aw + x);
       obs.push([id.data[o], id.data[o + 1], id.data[o + 2]]);
@@ -222,8 +222,8 @@ export async function bakeTexture({ mesh, project, atlasSize = null, depthWidth 
       for (let ch = 0; ch < 3; ch++) col[9 * tr + 3 * q + ch] = mesh.colors[3 * v + ch] / 255;
       if (c) {
         const [u, vv2] = used.get(v);
-        uv[6 * tr + 2 * q] = (c.ax + (u + 0.5 - c.x0) * scale) / S;
-        uv[6 * tr + 2 * q + 1] = 1 - (c.ay + (vv2 + 0.5 - c.y0) * scale) / S;
+        uv[6 * tr + 2 * q] = (c.ax + (u + 0.5 - c.x0) * (c.aw / c.w)) / S;
+        uv[6 * tr + 2 * q + 1] = 1 - (c.ay + (vv2 + 0.5 - c.y0) * (c.ah / c.h)) / S;
       } else { uv[6 * tr + 2 * q] = grayUV[0]; uv[6 * tr + 2 * q + 1] = grayUV[1]; }
     }
     if (!c) untex++;

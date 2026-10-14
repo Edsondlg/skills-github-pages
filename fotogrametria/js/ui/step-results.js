@@ -42,7 +42,7 @@ export function dashboard(app, M) {
     h('div', { class: 'gauge' }, gauge(M.index ?? 0, { size: 132, label: 'Índice global' }), h('div', {},
       h('div', { class: `verdict ${M.verdictClass || ''}-t` }, M.verdict || '—'),
       h('div', { class: 'sub' }, M.summary || 'Reconstruya la pieza para estimar la incertidumbre.'),
-      h('div', { class: 'sub' }, `Promedio ponderado de ${Object.keys(M.scores).length} indicadores`)))));
+      h('div', { class: 'sub' }, `Promedio ponderado de ${Object.keys(M.scores).length} indicadores, limitado por los de exactitud (control 3D, ruido y reproyección)`)))));
   d.append(h('div', { class: 'tile w3' }, h('h3', {}, 'Incertidumbre (95 %)'), h('div', { class: 'big' }, M.uncertainty95 !== undefined ? `±${fmt(M.uncertainty95, 2)}` : '—', h('small', {}, ' mm')), h('div', { class: 'sub' }, `Objetivo ±${fmt(M.target, 2)} mm · ${M.meetsTarget === undefined ? 'pendiente' : M.meetsTarget ? 'CUMPLE' : 'NO CUMPLE'}`)));
   const st = rec && rec.meshStats;
   d.append(h('div', { class: 'tile w3' }, h('h3', {}, 'Pieza (X × Y × Z)'), h('div', { class: 'big', style: { fontSize: '22px' } }, st ? `${fmt(st.bbox.size[0], 1)} × ${fmt(st.bbox.size[1], 1)} × ${fmt(st.bbox.max[2], 1)}` : '—', h('small', {}, ' mm')), h('div', { class: 'sub' }, st ? `Área ${fmt(st.area / 100, 1)} cm² · ${st.triangles.toLocaleString('es-MX')} triángulos` : 'Sin reconstrucción')));
@@ -108,7 +108,6 @@ function projectSummary(app) {
 function openReport(app) {
   const M = app.state.metrics;
   const w = window.open('', '_blank');
-  if (!w) { toast('Permita ventanas emergentes para abrir el reporte.', 'warn'); return; }
   let shot = '';
   try { if (app._viewer && app.state.recon) shot = app._viewer.screenshot(); } catch { shot = ''; }
   const cal = app.project.calib, rec = app.state.recon;
@@ -134,7 +133,9 @@ ${app.state.cad && app.state.cad.stats ? `<h2>Comparación con CAD (${esc(app.st
 <h2>Recomendaciones</h2><ul>${M.recs.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
 <p class="n">La incertidumbre se estima combinando el error 3D en puntos de control independientes (marcadores excluidos del ajuste), el ruido de profundidad medido sobre el plano conocido de la mesa y la resolución volumétrica. Para piezas críticas, verifique con un patrón dimensional conocido.</p>
 </body></html>`;
-  w.document.write(html);
-  w.document.close();
+  if (w) { w.document.write(html); w.document.close(); return; }
+  // sin ventanas emergentes: ofrecer el reporte como archivo HTML
+  download(new Blob([html], { type: 'text/html;charset=utf-8' }), 'reporte_fotogrametria.html');
+  toast('El reporte se descargó como HTML (ábralo e imprímalo a PDF desde el navegador).', 'warn', 7000);
 }
 export { download };

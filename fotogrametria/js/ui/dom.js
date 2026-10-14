@@ -61,7 +61,29 @@ export function kvTable(rows) {
 }
 export function chip(text, kind = '') { return h('span', { class: `chip ${kind}` }, text); }
 
-export function download(blob, name) {
+// Descarga de archivos. Dentro de un visor de artefactos de Claude se usa la capacidad
+// «downloads» (con confirmación del usuario; los formatos no admitidos se entregan en .zip);
+// en un navegador normal, un enlace de descarga.
+const SAVE_EXT = new Set('gif png jpg jpeg webp mp4 webm txt json md docx pptx epub csv ttf html svg pdf xlsx zip'.split(' '));
+let dlCap;
+function downloadsCap() {
+  if (dlCap === undefined) dlCap = window.claude && typeof window.claude.use === 'function' ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+  return dlCap;
+}
+export async function download(blob, name) {
+  const cap = await downloadsCap();
+  if (cap) {
+    let data = blob, filename = name;
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    if (!SAVE_EXT.has(ext)) {
+      const { makeZip } = await import('../core/zip.js');
+      data = await makeZip([{ name, data: blob }]);
+      filename = name.replace(/\.[^.]+$/, '') + '.zip';
+    }
+    try { await cap.save({ filename, data }); toast(`Guardado: ${filename}`, 'ok'); }
+    catch (e) { if (!e || e.code !== 'declined') toast(`No se pudo guardar ${filename}${e && e.message ? ': ' + e.message : ''}.`, 'bad'); }
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = h('a', { href: url, download: name });
   document.body.append(a);
@@ -69,7 +91,7 @@ export function download(blob, name) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
-export function downloadText(text, name, type = 'text/plain') { download(new Blob([text], { type: type + ';charset=utf-8' }), name); }
+export function downloadText(text, name, type = 'text/plain') { return download(new Blob([text], { type: type + ';charset=utf-8' }), name); }
 
 let toastHost = null;
 export function toast(msg, kind = '', ms = 4500) {
@@ -95,6 +117,22 @@ export function modal(content) {
   clear(body).append(...(Array.isArray(content) ? content : [content]),
     h('div', { class: 'row end', style: { marginTop: '16px' } }, h('button', { class: 'btn primary', onclick: () => dlg.close() }, 'Cerrar')));
   dlg.showModal();
+}
+
+// Confirmación dentro de la página (window.confirm no está disponible en todos los entornos).
+export function confirmDialog(message, { ok = 'Continuar', cancel = 'Cancelar' } = {}) {
+  return new Promise((resolve) => {
+    const dlg = document.getElementById('modal');
+    const body = document.getElementById('modal-body');
+    const done = (v) => { dlg.removeEventListener('close', onClose); dlg.close(); resolve(v); };
+    const onClose = () => resolve(false);
+    clear(body).append(h('p', { style: { fontSize: '15px', margin: '4px 0 0' } }, message),
+      h('div', { class: 'row end', style: { marginTop: '18px' } },
+        h('button', { class: 'btn', onclick: () => done(false) }, cancel),
+        h('button', { class: 'btn primary', onclick: () => done(true) }, ok)));
+    dlg.addEventListener('close', onClose, { once: true });
+    dlg.showModal();
+  });
 }
 
 // Guardado local seguro (puede fallar en modo privado).

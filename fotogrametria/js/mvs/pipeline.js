@@ -16,7 +16,7 @@ export const QUALITY = {
 };
 
 export const RECON_DEFAULTS = {
-  quality: 'normal', maxHeight: 120, zCut: 0.5, sheetThickness: 1.5, costThr: 0.35,
+  quality: 'normal', maxHeight: 120, zCut: 0.5, sheetThickness: 1.5, costThr: 0.4,
   minViews: 2, smooth: 2, margin: 6, voxel: null, coarseScale: null,
 };
 
@@ -29,7 +29,13 @@ function sizesFor(width, height, longSide) {
 const yieldUI = () => new Promise(r => setTimeout(r, 0));
 
 // views: [{ file, R, t }] registradas; K: intrínsecos completos (con distorsión) comunes.
-export async function reconstruct({ views, K, board, params = {}, onProgress = () => {}, signal = null, workerUrl = null, keepPreviews = true }) {
+export function scaleIntrinsics(K, s) {
+  const width = Math.round(K.width * s), height = Math.round(K.height * s);
+  const sx = width / K.width, sy = height / K.height;
+  return { ...K, width, height, fx: K.fx * sx, fy: K.fy * sy, cx: (K.cx + 0.5) * sx - 0.5, cy: (K.cy + 0.5) * sy - 0.5 };
+}
+
+export async function reconstruct({ views, K, board, params = {}, onProgress = () => {}, signal = null, workerUrl = null, keepPreviews = true, onDepthMap = null }) {
   const p = { ...RECON_DEFAULTS, ...params };
   const Q = typeof p.quality === 'object' ? p.quality : (QUALITY[p.quality] || QUALITY.normal);
   const tStart = performance.now();
@@ -40,8 +46,18 @@ export async function reconstruct({ views, K, board, params = {}, onProgress = (
   const gpu = new GPU();
   const free = board.free;
   const searchBox = { min: [free.x0 - 2, free.y0 - 2, -3], max: [free.x1 + 2, free.y1 + 2, p.maxHeight] };
+  // fotos mayores que el límite de texturas de la GPU: se decodifican reducidas con K escalada
+  const srcScale = Math.min(1, gpu.maxTex / Math.max(K.width, K.height));
+  if (srcScale < 1) K = scaleIntrinsics(K, srcScale);
   const bitmaps = new Array(N);
-  const getBitmap = async (i) => bitmaps[i] || (bitmaps[i] = await createImageBitmap(views[i].file));
+  const getBitmap = async (i) => {
+    if (bitmaps[i]) return bitmaps[i];
+    const bmp = await createImageBitmap(views[i].file);
+    if (bmp.width === K.width && bmp.height === K.height) return (bitmaps[i] = bmp);
+    const r = await createImageBitmap(bmp, { resizeWidth: K.width, resizeHeight: K.height, resizeQuality: 'high' });
+    bmp.close?.();
+    return (bitmaps[i] = r);
+  };
   const releaseBitmaps = () => { for (let i = 0; i < N; i++) if (bitmaps[i]) { bitmaps[i].close?.(); bitmaps[i] = null; } };
   let partBox;
   try {
@@ -136,6 +152,7 @@ export async function reconstruct({ views, K, board, params = {}, onProgress = (
     if (xs.length < 10) {
       partBox = { min: searchBox.min.slice(), max: searchBox.max.slice() };
       onProgress('caja', 1, 'Aviso: no se aisló la pieza; se usa toda la zona libre (pieza muy plana o sin textura).');
+      partBox.warn = true;
     } else {
       partBox = {
         min: [Math.max(searchBox.min[0], Math.min(...xs) - vox - m), Math.max(searchBox.min[1], Math.min(...ys) - vox - m), -3],
@@ -143,6 +160,11 @@ export async function reconstruct({ views, K, board, params = {}, onProgress = (
       };
     }
     timings.zThr = zThr;
+    const warnings = [];
+    if (xs.length >= 10 && Math.max(...zs) + vox > p.maxHeight - 4) {
+      warnings.push(`La pieza llega a la altura máxima configurada (${p.maxHeight} mm): aumente «Altura máxima» si es más alta.`);
+      onProgress('aviso', 1, warnings[warnings.length - 1]);
+    }
     onProgress('caja', 1, `Pieza localizada: ${(partBox.max[0] - partBox.min[0]).toFixed(0)} × ${(partBox.max[1] - partBox.min[1]).toFixed(0)} × ${partBox.max[2].toFixed(0)} mm (con margen)`);
 
     // ---------------- Etapa fina ----------------
@@ -168,11 +190,18 @@ export async function reconstruct({ views, K, board, params = {}, onProgress = (
     }
     releaseBitmaps();
     const gsd = median(gsds);
-    const voxel = p.voxel || Math.min(1.0, Math.max(0.15, Q.voxelFactor * gsd));
+    // vóxel ~ resolución de la imagen, y al menos 3 vóxeles en el espesor de la lámina
+    // límite de memoria: ~8 M vóxeles en la banda de la superficie (área de la caja como cota)
+    const bx = partBox.max[0] - partBox.min[0], by = partBox.max[1] - partBox.min[1], bz = partBox.max[2] - Math.max(0, partBox.min[2]);
+    const vMem = Math.sqrt(2 * (bx * by + bx * bz + by * bz) * 6 / 8e6);
+    const voxel = p.voxel || Math.max(0.15, vMem, Math.min(1.0, Q.voxelFactor * gsd, p.sheetThickness / 3));
     const tsdf = workerRPC(workerUrl || new URL('../workers/tsdf.worker.js', import.meta.url));
-    const truncBack = Math.max(1.5, Math.min(3, 0.45 * p.sheetThickness / voxel));
+    // truncamiento detrás de la superficie: ≥ 2 vóxeles (banda completa para Surface Nets) y
+    // ~ medio espesor, para que las dos caras de una lámina delgada no se mezclen
+    const truncBack = Math.max(2, Math.min(3, 0.5 * p.sheetThickness / voxel));
     const region = { min: [partBox.min[0], partBox.min[1], p.zCut], max: [partBox.max[0], partBox.max[1], partBox.max[2]] };
-    await tsdf.call('init', { opts: { voxel, trunc: 3, truncBack, region, zCut: p.zCut } });
+    const tsdfOpts = { voxel, trunc: 3, truncBack, region, zCut: p.zCut };
+    await tsdf.call('init', { opts: tsdfOpts });
     const perView = [];
     const previews = [];
     let pending = [];
@@ -202,6 +231,7 @@ export async function reconstruct({ views, K, board, params = {}, onProgress = (
       perView.push({ index: r, sources: srcs, validFrac: nIn ? nOk / nIn : 0, meanCost: nOk ? sc / nOk : 1, ms: performance.now() - tv });
       // integrar en el worker (en paralelo con la siguiente vista en GPU)
       const payload = { W: dm.W, H: dm.H, K: dm.K, R: dm.R, t: dm.t, depth: dm.depth, normal: dm.normal, cost: dm.cost, color };
+      if (onDepthMap) onDepthMap({ ...payload, depth: dm.depth.slice(), normal: dm.normal.slice(), cost: dm.cost.slice(), color: color.slice(), index: r });
       pending.push(tsdf.call('integrate', { dm: payload, opts: { costThr: p.costThr } }, [dm.depth.buffer, dm.normal.buffer, dm.cost.buffer, color.buffer]));
       if (pending.length >= 2) { await pending.shift(); }
       onProgress('fino', (r + 1) / N, `Mapa de profundidad ${r + 1}/${N}`);
@@ -218,6 +248,23 @@ export async function reconstruct({ views, K, board, params = {}, onProgress = (
     const tab = await tsdf.call('table');
     tsdf.terminate();
     timings.mesh = performance.now() - t2;
+    // cobertura estimada: vóxeles de la pieza hallados en la etapa gruesa que quedaron cubiertos por la malla
+    let coverage = null;
+    if (xs.length >= 10 && mesh.positions.length) {
+      const cell = vox, marked = new Set();
+      const ck = (x, y, z) => (x + 32768) + (y + 32768) * 65536 + (z + 32768) * 4294967296;
+      for (let i = 0; i < mesh.positions.length; i += 3) marked.add(ck(Math.floor(mesh.positions[i] / cell), Math.floor(mesh.positions[i + 1] / cell), Math.floor(mesh.positions[i + 2] / cell)));
+      let cov = 0, tot = 0;
+      for (let i = 0; i < xs.length; i++) {
+        if (zs[i] < p.zCut + 1.5) continue;
+        tot++;
+        const cx = Math.floor(xs[i] / cell), cy = Math.floor(ys[i] / cell), cz = Math.floor(zs[i] / cell);
+        let hit = false;
+        for (let dz = -1; dz <= 1 && !hit; dz++) for (let dy = -1; dy <= 1 && !hit; dy++) for (let dx = -1; dx <= 1 && !hit; dx++) if (marked.has(ck(cx + dx, cy + dy, cz + dz))) hit = true;
+        if (hit) cov++;
+      }
+      if (tot) coverage = { frac: cov / tot, voxels: tot, cell };
+    }
     // estadísticas del plano de la mesa (ruido de profundidad medido sobre una superficie conocida)
     const z = Array.from(tab.z);
     let tableStats = null;
@@ -233,8 +280,8 @@ export async function reconstruct({ views, K, board, params = {}, onProgress = (
     onProgress('listo', 1, 'Reconstrucción terminada');
     return {
       mesh: { positions: mesh.positions, indices: mesh.indices, colors: mesh.colors, conf: mesh.conf },
-      meshStats: mesh.stats, rawTriangles: mesh.rawTriangles, partBox, voxel, gsd, tableStats, perView, previews,
-      fineSize: [Wf, Hf], coarseSize: [Wc, Hc], timings, params: { ...p, qualityLabel: Q.label },
+      meshStats: mesh.stats, rawTriangles: mesh.rawTriangles, partBox, voxel, gsd, tableStats, perView, previews, tsdfOpts, coverage,
+      fineSize: [Wf, Hf], coarseSize: [Wc, Hc], timings, warnings, params: { ...p, qualityLabel: Q.label },
     };
   } finally {
     releaseBitmaps();

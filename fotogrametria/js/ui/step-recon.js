@@ -49,6 +49,7 @@ export function renderRecon(app) {
           st ? ['Malla', `${st.vertices.toLocaleString('es-MX')} vért. · ${st.triangles.toLocaleString('es-MX')} triáng.`] : null,
           ts ? ['Ruido en plano de mesa (1σ)', `${fmt(ts.sigma, 3)} mm (RMS ${fmt(ts.rms, 3)})`] : null,
         ]),
+        ...(rec.warnings || []).map(w => h('p', { class: 'hint warn-t' }, '⚠ ' + w)),
       ),
       rec.previews && rec.previews.length ? card('Mapas de profundidad (vista previa)', h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' } }, rec.previews.map(pv => {
         const c = h('canvas', { width: pv.w, height: pv.h, title: `Foto ${pv.index + 1}`, style: { width: '100%', borderRadius: '6px' } });

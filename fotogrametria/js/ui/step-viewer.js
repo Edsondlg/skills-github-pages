@@ -4,7 +4,8 @@ import { h, add, card, kvTable, fmt, download, downloadText, toast, checkbox } f
 import { MeasureTool, MEASURE_TYPES, sectionSegments } from '../viewer/tools.js';
 import { profileChart } from './charts.js';
 import { taubinSmooth, removeSmallComponents, filterTriangles, meshStats } from '../mesh/process.js';
-import { disposeGroup } from '../viewer/viewer.js';
+import { disposeGroup, label } from '../viewer/viewer.js';
+import { detectHoles } from '../analysis/features.js';
 
 const MODES = [['color', 'Color real'], ['texture', 'Textura foto'], ['shaded', 'Metálico'], ['wire', 'Alambre'], ['points', 'Puntos'], ['confidence', 'Confianza'], ['deviation', 'Desviación CAD']];
 
@@ -20,7 +21,9 @@ export function renderViewer(app) {
     return;
   }
   const vs = app.state.view || (app.state.view = { mode: 'color', board: true, cameras: false, grid: true, box: false, stickers: true, cad: true });
+  const seq = app.renderSeq;
   setup(app).then(() => {
+    if (seq !== app.renderSeq) return; // el usuario cambió de paso mientras se preparaba el visor
     const v = app._viewer;
     const st = rec.meshStats;
     const modeBtns = h('div', { class: 'row' }, MODES.map(([k, l]) => h('button', {
@@ -29,7 +32,7 @@ export function renderViewer(app) {
       title: k === 'texture' && !rec.texture ? 'Genere la textura fotográfica abajo' : '',
       onclick: () => { vs.mode = k; v.setMode(k); updateLegend(app); app.refresh(); },
     }, l)));
-    const tg = (key, label, group) => checkbox(label, vs[key], (on) => { vs[key] = on; v.show(group, on); });
+    const tg = (key, text, group) => checkbox(text, vs[key], (on) => { vs[key] = on; v.show(group, on); if (key === 'box') app.refresh(); });
     // ---- medición ----
     const mt = app.measure;
     const list = h('div', {});
@@ -89,6 +92,28 @@ export function renderViewer(app) {
         ['Área de superficie', `${fmt(st.area / 100, 2)} cm²`], st.closed ? ['Volumen', `${fmt(st.volume / 1000, 3)} cm³`] : null,
         ['Malla', `${st.vertices.toLocaleString('es-MX')} vért. · ${st.triangles.toLocaleString('es-MX')} triáng.`],
       ])) : null,
+      card('Barrenos y aberturas',
+        app.state.holes ? (app.state.holes.length ? h('div', { style: { maxHeight: '200px', overflow: 'auto' } }, h('table', { class: 'grid' },
+          h('thead', {}, h('tr', {}, ['#', 'Tipo', 'Ø / tamaño (mm)', 'Centro X, Y, Z (mm)'].map(t => h('th', {}, t)))),
+          h('tbody', {}, app.state.holes.map((o, i) => h('tr', {}, h('td', {}, String(i + 1)), h('td', {}, o.type === 'circular' ? 'Barreno' : o.section !== null ? 'Abertura' : 'Abertura o hueco'),
+            h('td', {}, o.type === 'circular' ? `Ø ${fmt(o.diameter, 2)} ±${fmt(o.u95, 2)}` : `${fmt(o.size[0], 1)} × ${fmt(o.size[1], 1)}`),
+            h('td', { class: 'mono' }, o.center.map(x => fmt(x, 1)).join(', '))))))) : h('p', { class: 'hint' }, 'No se encontraron bordes cerrados interiores.')) : h('p', { class: 'hint' }, 'Busca bordes cerrados en la malla y ajusta círculos para estimar diámetros y posiciones de barrenos.'),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn small', onclick: () => {
+            const m = app.state.recon.mesh, vox = rec.voxel || 0.5;
+            app.state.holes = detectHoles(m.positions, m.indices, { thickness: (rec.params && rec.params.sheetThickness) || app.settings.recon.sheetThickness, minR: Math.max(1, 2 * vox) });
+            // incertidumbre (95 %) del diámetro: ajuste del círculo + resolución de la malla (1 vóxel)
+            for (const o of app.state.holes) if (o.type === 'circular') o.u95 = 2 * Math.hypot(o.fitRms, vox);
+            showHoleLabels(app);
+            app.computeMetrics();
+            const hs = app.state.holes, nb = hs.filter(o => o.type === 'circular').length, na = hs.filter(o => o.type !== 'circular' && o.section !== null).length;
+            toast(`${nb} barreno(s), ${na} abertura(s) y ${hs.length - nb - na} abertura(s) o hueco(s) sin pared medible.`, 'ok');
+            app.refresh();
+          } }, app.state.holes ? 'Volver a detectar' : 'Detectar barrenos'),
+          app.state.holes && app.state.holes.length ? h('button', { class: 'btn small', onclick: () => downloadText(['n,tipo,diametro_mm,u95_mm,ajuste_rms_mm,diametro_borde_mm,cx,cy,cz,nx,ny,nz,largo_mm,ancho_mm', ...app.state.holes.map((o, i) => [i + 1, o.type, o.diameter ? o.diameter.toFixed(4) : '', o.u95 ? o.u95.toFixed(4) : '', o.fitRms ? o.fitRms.toFixed(4) : '', o.edgeDiameter ? o.edgeDiameter.toFixed(4) : '', ...o.center.map(x => x.toFixed(4)), ...o.normal.map(x => x.toFixed(5)), o.size[0].toFixed(3), o.size[1].toFixed(3)].join(','))].join('\n'), 'barrenos.csv', 'text/csv') }, 'Exportar CSV') : null,
+        ),
+        h('p', { class: 'hint' }, 'Barrenos y aberturas se miden en un corte a media pared (según el espesor de lámina del paso 4); ± es la incertidumbre al 95 % (ajuste del círculo y resolución de la malla). «Abertura o hueco»: borde sin pared medible; puede ser una zona que las fotos no cubrieron. Los barrenos en paredes vistas por ambas caras no dejan borde abierto: mídalos con la herramienta Radio.'),
+      ),
       card('Medición', toolBtns, list, h('div', { class: 'row' },
         h('button', { class: 'btn small', disabled: !mt.items.length, onclick: () => downloadText(mt.toCSV(), 'mediciones.csv', 'text/csv') }, 'Exportar CSV'),
         h('button', { class: 'btn small ghost', disabled: !mt.items.length, onclick: () => mt.clear() }, 'Borrar todo'))),
@@ -178,6 +203,23 @@ async function setup(app) {
   return v;
 }
 
+function showHoleLabels(app) {
+  const v = app._viewer;
+  if (!app.holeGroup) { app.holeGroup = new THREE.Group(); v.scene.add(app.holeGroup); }
+  disposeGroup(app.holeGroup);
+  (app.state.holes || []).forEach((o, i) => {
+    if (o.type !== 'circular') return;
+    const lb = label(`${i + 1}: Ø${o.diameter.toFixed(2)}`, 'small');
+    lb.position.set(...o.center);
+    app.holeGroup.add(lb);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(o.diameter / 2 - 0.15, o.diameter / 2 + 0.15, 48), new THREE.MeshBasicMaterial({ color: 0xf5a524, side: THREE.DoubleSide, depthTest: false }));
+    ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(...o.normal));
+    ring.position.set(...o.center);
+    ring.renderOrder = 7;
+    app.holeGroup.add(ring);
+  });
+}
+
 async function showScene(app) {
   app.showView('3d');
   const v = await app.ensureViewer();
@@ -206,6 +248,8 @@ function setMeshData(app, m) {
   rec.mesh = m;
   rec.meshStats = m.indices.length ? meshStats(m.positions, m.indices) : null;
   rec.texture = null;
+  app.state.holes = null;
+  if (app.holeGroup) disposeGroup(app.holeGroup);
   app._viewer.setTexturedMesh(null);
   app._viewer.setMesh(m);
   if (app.state.cad) { app.state.cad = null; toast('La comparación CAD se reinició porque cambió la malla.', 'warn'); }
