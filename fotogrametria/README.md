@@ -32,7 +32,7 @@ Pulse **▶ Demo** para ver el flujo completo con 22 fotos sintéticas de un sop
 | 2 · Fotos | Carga por arrastre; detecta los marcadores en paralelo (Web Workers), mide nitidez y exposición, y muestra cada foto con sus marcadores. |
 | 3 · Calibración | Calibra la cámara (focal, punto principal, distorsión k1 k2 p1 p2 [k3]) y la pose de cada foto con ajuste de haces robusto; refina las esquinas con el modelo de lente y valida con **puntos de control independientes**. |
 | 4 · Reconstruir | Localiza la pieza, calcula mapas de profundidad con **PatchMatch multivista en la GPU** (planos inclinados, correlación normalizada, mejores vistas) y los fusiona en un volumen **TSDF** del que se extrae una malla con color. |
-| 5 · Visor 3D | Gire, desplace y acerque la pieza; modos color real, **textura fotográfica**, metálico, alambre, puntos, confianza y desviación. Medición de **distancia, coordenadas, ángulo y radio/diámetro**, **secciones** con perfil exportable, mover/rotar, suavizar, recortar y exportar **STL, PLY, OBJ, GLB**. |
+| 5 · Visor 3D | Gire, desplace y acerque la pieza; modos color real, **textura fotográfica**, metálico, alambre, puntos, confianza y desviación. Medición de **distancia, coordenadas, ángulo y radio/diámetro**, **detección de barrenos y ranuras** (posición y diámetro/tamaño medidos a media pared, con incertidumbre), **secciones** con perfil exportable, mover/rotar, suavizar, recortar y exportar **STL, PLY, OBJ, GLB**. |
 | 6 · Resultados | **Índice global de calidad**, porcentajes de efectividad por indicador, **incertidumbre estimada (95 %)**, dimensiones, gráficas, recomendaciones y **reporte imprimible/PDF**, CSV y JSON. |
 | 7 · Comparar CAD | Carga STL/OBJ nominal, alinea automáticamente (ejes principales + ICP punto-a-plano con compatibilidad de normales), colorea la desviación y reporta % dentro de tolerancia, media, RMS, máximos y cobertura. |
 
@@ -111,6 +111,10 @@ npm run test:ui          # interfaz completa con la demo: medición, CAD y textu
   haga una segunda sesión si la necesita).
 - Superficies espejo o totalmente lisas no tienen correspondencias: aplique revelador mate y moteado.
 - Las paredes muy delgadas (< 3 vóxeles) pueden perder una de sus caras; indique el espesor de lámina.
+- Los barrenos de paredes vistas por ambas caras (p. ej. una pestaña) no dejan un borde abierto en la
+  malla y no se detectan solos: mídalos con la herramienta Radio. Los de la cara apoyada en la mesa sí.
+- El diámetro de barrenos depende de la resolución: con calidades bajas la fusión redondea la pared y
+  el error puede acercarse a 1 mm; cada barreno trae su incertidumbre (95 %).
 - Todas las fotos deben ser de la misma cámara, con el mismo zoom y la misma orientación de imagen.
 
 ## Créditos y licencias

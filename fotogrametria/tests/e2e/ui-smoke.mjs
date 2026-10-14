@@ -39,6 +39,13 @@ if (FULL) {
     return a.measure.items.map(i => i.text);
   });
   console.log('medición:', meas);
+  // barrenos y ranuras (botón del visor)
+  await page.evaluate(() => window.fotoApp.go('viewer'));
+  await page.getByRole('button', { name: 'Detectar barrenos' }).click();
+  await page.waitForFunction(() => Array.isArray(window.fotoApp.state.holes), null, { timeout: 120000, polling: 500 });
+  console.log('barrenos:', await page.evaluate(() => window.fotoApp.state.holes.filter(o => o.type === 'circular' || o.section !== null)
+    .map(o => `${o.type === 'circular' ? `Ø${o.diameter.toFixed(2)} ±${o.u95.toFixed(2)}` : `${o.size[0].toFixed(1)}×${o.size[1].toFixed(1)}`} en ${o.center.map(v => v.toFixed(1)).join(', ')}`)));
+  await shot('holes');
   // sección
   await page.evaluate(() => { const a = window.fotoApp; a.state.section = { axis: 'x', offset: 0, flip: false }; a.refresh(); });
   await shot('section');

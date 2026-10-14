@@ -10,6 +10,11 @@ export const DEMO_PART = {
   nombre: 'Soporte en L estampado (demo)',
   ancho: 140, fondo: 80, espesor: 2, alturaPestana: 42, radioInterior: 3,
 };
+// Barrenos y ranura de la base (coordenadas locales de la pieza, mm); verdad para validar su medición.
+export const DEMO_BASE_FEATURES = {
+  holes: [{ x: -48, y: -16, d: 10 }, { x: 48, y: -16, d: 10 }],
+  slot: { x: 0, y: -25, length: 30, width: 9 },
+};
 
 function speckleCanvas(sizePx, mmPerTile, seed, { bg = '#c9ccd1', ink = '#1d1f22', dot = 0.9 } = {}) {
   const c = document.createElement('canvas');
@@ -69,7 +74,8 @@ export function stampedBracketGeometries(P = DEMO_PART) {
   base.absarc(W / 2 - rc, -D / 2 + rc, rc, 1.5 * Math.PI, 2 * Math.PI, false);
   base.lineTo(W / 2, yb);
   base.lineTo(-W / 2, yb);
-  base.holes.push(circlePath(-48, -16, 5), circlePath(48, -16, 5), obroundPath(0, -25, 30, 9));
+  const { holes, slot } = DEMO_BASE_FEATURES;
+  base.holes.push(...holes.map(o => circlePath(o.x, o.y, o.d / 2)), obroundPath(slot.x, slot.y, slot.length, slot.width));
   geos.push(new THREE.ExtrudeGeometry(base, { depth: t, bevelEnabled: false, curveSegments: 48 }));
   // Doblez (sector anular extruido a lo largo de X)
   const bend = new THREE.Shape();

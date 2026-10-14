@@ -18,8 +18,10 @@ const checks = [
   ['≥ 95 % de la malla a < 1 mm de la pieza real', r.acc.within1 >= 0.95],
   ['mediana del error < 0.2 mm', r.acc.med < 0.2],
   ['completitud ≥ 60 % (tolerancia 1 mm)', r.completeness >= 0.6],
+  ['barrenos de la base: centro < 1 mm, Ø ± 1.5 mm', r.holes.every(o => o && o.pos < 1 && Math.abs(o.dErr) < 1.5)],
+  ['ranura de la base medida a media pared: centro < 1 mm, largo y ancho ± 1.5 mm', !!r.slot && r.slot.measured && r.slot.pos < 1 && Math.abs(r.slot.lenErr) < 1.5 && Math.abs(r.slot.widErr) < 1.5],
 ];
 let ok = true;
 for (const [name, pass] of checks) { console.log(`${pass ? '✔' : '✖'} ${name}`); ok = ok && !!pass; }
-console.log(JSON.stringify({ calib: { rms: r.calib.rms, check: r.calib.check.rms3d }, acc: r.acc, completeness: r.completeness, table: r.recon.table }, null, 1));
+console.log(JSON.stringify({ calib: { rms: r.calib.rms, check: r.calib.check.rms3d }, acc: r.acc, completeness: r.completeness, table: r.recon.table, holes: r.holes, slot: r.slot }, null, 1));
 process.exit(ok ? 0 : 1);

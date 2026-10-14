@@ -208,7 +208,13 @@ function showHoleLabels(app) {
   if (!app.holeGroup) { app.holeGroup = new THREE.Group(); v.scene.add(app.holeGroup); }
   disposeGroup(app.holeGroup);
   (app.state.holes || []).forEach((o, i) => {
-    if (o.type !== 'circular') return;
+    if (o.type !== 'circular') {
+      if (o.section === null) return;
+      const lb = label(`${i + 1}: ${o.size[0].toFixed(1)} × ${o.size[1].toFixed(1)}`, 'small');
+      lb.position.set(...o.center);
+      app.holeGroup.add(lb);
+      return;
+    }
     const lb = label(`${i + 1}: Ø${o.diameter.toFixed(2)}`, 'small');
     lb.position.set(...o.center);
     app.holeGroup.add(lb);
