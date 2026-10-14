@@ -104,7 +104,7 @@ fotogrametria/
 cd fotogrametria
 npm test                 # unitarias: detector, calibración, TSDF, ICP, patrones, métricas (≈ 1 min)
 npm run test:e2e         # exactitud del flujo completo, barrenos y ranura vs. geometría real (Chromium headless, ≈ 15 min)
-npm run test:ui          # interfaz completa con la demo: medición, barrenos, CAD y textura (≈ 15 min)
+npm run test:ui          # estado del visor entre pasos + interfaz completa con la demo: medición, barrenos, CAD y textura (≈ 15 min)
 ```
 
 ## Limitaciones conocidas

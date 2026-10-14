@@ -55,6 +55,9 @@ class App {
       this._viewer.onPick = null;
       if (this.measure) this.measure.setMode(null);
       if (this.state.tf) { this.state.tf = null; this._viewer.enableTransform(null); }
+      // el corte sólo se aplica en el visor (al volver, el paso 5 lo restaura)
+      this._viewer.setClipping([]);
+      if (this.sectionGroup) { this.sectionGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); this.sectionGroup.clear(); }
     }
     this.state.step = step;
     store('step', step);
