@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Arnés de pruebas</title>
+<script type="importmap">
+{ "imports": { "three": "../../lib/three/three.module.min.js", "three/addons/": "../../lib/three/addons/" } }
+</script>
+</head>
+<body>
+<script type="module">
+  import * as THREE from 'three';
+  window.THREE = THREE;
+  window.mods = {
+    board: await import('../../js/core/board.js'),
+    camera: await import('../../js/core/camera.js'),
+    aruco: await import('../../js/core/aruco.js'),
+    calibrate: await import('../../js/core/calibrate.js'),
+    triangulate: await import('../../js/core/triangulate.js'),
+    image: await import('../../js/core/image.js'),
+    linalg: await import('../../js/core/linalg.js'),
+    synth: await import('../../js/demo/synth.js'),
+  };
+  window.harnessReady = true;
+</script>
+</body>
+</html>

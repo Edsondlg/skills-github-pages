@@ -1,0 +1,12 @@
+{
+  "name": "fotogrametria-piezas-estampadas",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sistema de fotogrametría en el navegador para reconstruir piezas estampadas con precisión milimétrica.",
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"tests/unit/*.test.mjs\"",
+    "test:e2e": "node tests/e2e/run-e2e.mjs",
+    "serve": "npx --yes http-server -p 8080 -c-1 ."
+  }
+}
