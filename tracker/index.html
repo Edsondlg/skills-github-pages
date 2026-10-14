@@ -1,0 +1,1956 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<!-- page:start -->
+<title>Project Execution Tracker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: tablero de piso. Banda "Next move", siete paneles de preguntas agrupados en Estado · Depende de · Impacto,
+   ruta OP 10–80 por proyecto y bitácora completa de pendientes. */
+:root {
+  color-scheme: light;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+
+  --bg: #ECEFF3;            /* acero: plano de la página */
+  --surface: #FBFCFD;       /* paneles */
+  --surface-2: #F1F4F7;     /* encabezados de tabla, hover */
+  --ink: #10151D;
+  --ink-2: #444E5C;
+  --muted: #5F6B7A;
+  --line: #D5DBE2;
+  --line-2: #B4BDC8;
+  --accent: #1C4FC2;        /* azul de trazo (layout fluid): Edson y trabajo en curso */
+  --accent-soft: #E1E9FA;
+  --on-accent: #FFFFFF;
+  --band: #1C4FC2;
+  --on-band: #FFFFFF;
+  --band-2: rgba(255, 255, 255, 0.76);
+  --band-line: rgba(255, 255, 255, 0.34);
+
+  --good: #0ca30c;          /* estados: fijos en ambos temas */
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --on-status: #10151D;
+  --good-text: #006300;
+  --warning-text: #7A4D00;
+  --serious-text: #9C3D0C;
+  --critical-text: #B0261F;
+  --critical-wash: rgba(208, 59, 59, 0.2);
+  --scrim: rgba(12, 15, 20, 0.45);
+
+  --font-ui: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --r: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0C0F14; --surface: #141920; --surface-2: #1A2029;
+    --ink: #E7EBF0; --ink-2: #B0B9C5; --muted: #8B95A3; --line: #262D37; --line-2: #3A4350;
+    --accent: #86A8FF; --accent-soft: #1A2748; --on-accent: #0C0F14;
+    --band: #1D46AE; --on-band: #FFFFFF; --band-2: rgba(255, 255, 255, 0.78); --band-line: rgba(255, 255, 255, 0.3);
+    --good-text: #0ca30c; --warning-text: #F2BE4A; --serious-text: #F29A74; --critical-text: #FF8A80;
+    --critical-wash: rgba(208, 59, 59, 0.32); --scrim: rgba(0, 0, 0, 0.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0C0F14; --surface: #141920; --surface-2: #1A2029;
+  --ink: #E7EBF0; --ink-2: #B0B9C5; --muted: #8B95A3; --line: #262D37; --line-2: #3A4350;
+  --accent: #86A8FF; --accent-soft: #1A2748; --on-accent: #0C0F14;
+  --band: #1D46AE; --on-band: #FFFFFF; --band-2: rgba(255, 255, 255, 0.78); --band-line: rgba(255, 255, 255, 0.3);
+  --good-text: #0ca30c; --warning-text: #F2BE4A; --serious-text: #F29A74; --critical-text: #FF8A80;
+  --critical-wash: rgba(208, 59, 59, 0.32); --scrim: rgba(0, 0, 0, 0.6);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 14px/1.45 var(--font-ui);
+  font-stretch: 100%;
+}
+[hidden] { display: none !important; }
+img { max-width: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.ic { width: 14px; height: 14px; fill: currentColor; flex: none; display: inline-block; vertical-align: -2px; }
+.code { font: 500 12px/1.2 var(--font-mono); color: var(--ink-2); letter-spacing: 0.01em; white-space: nowrap; }
+.num, td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+[data-tone="critical"] { color: var(--critical-text); }
+[data-tone="serious"] { color: var(--serious-text); }
+[data-tone="warning"] { color: var(--warning-text); }
+[data-tone="good"] { color: var(--good-text); }
+[data-tone="muted"] { color: var(--muted); }
+
+.app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 18px;
+}
+
+/* ---------- Encabezado ---------- */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.eyebrow { margin: 0 0 6px; font: 500 11px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 0; font: 800 clamp(28px, 3.4vw, 38px)/1 var(--font-ui); font-stretch: 70%; letter-spacing: 0; text-wrap: balance; }
+.top-side { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.top-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font: 500 12px/1.2 var(--font-mono); color: var(--ink-2); }
+.sync { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--surface); cursor: default; }
+.sync::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); }
+.sync[data-mode="db"]::before { background: var(--good); }
+.sync[data-mode="local"]::before { background: var(--warning); }
+.sync[data-mode="nodb"]::before { background: var(--critical); }
+.top-actions { display: flex; gap: 8px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; padding: 8px 14px;
+  font: 600 13px/1 var(--font-ui);
+  color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line-2); border-radius: var(--r);
+  cursor: pointer; white-space: nowrap;
+}
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.small { min-height: 30px; padding: 6px 10px; font-size: 12.5px; }
+.btn.danger { color: var(--critical-text); }
+.btn.danger[data-armed] { background: var(--critical); border-color: var(--critical); color: #FFFFFF; }
+.btn:disabled { opacity: 0.55; cursor: progress; }
+.link { all: unset; cursor: pointer; font: 600 12.5px/1.2 var(--font-ui); color: var(--accent); padding: 4px 2px; }
+.link:hover { text-decoration: underline; }
+.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+/* ---------- Aviso de ejemplo ---------- */
+.demo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r); font-size: 13px; color: var(--ink-2); }
+.demo p { margin: 0; max-width: 80ch; }
+.demo b { color: var(--ink); }
+.demo-actions { display: flex; gap: 8px; }
+
+/* ---------- Filtro ---------- */
+.filter { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.filter-label { font: 600 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); flex: none; }
+.chips { position: relative; display: flex; gap: 6px; overflow-x: auto; min-width: 0; padding: 2px; scrollbar-width: thin; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  padding: 6px 11px; min-height: 32px;
+  font: 500 12.5px/1 var(--font-mono); color: var(--ink-2);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 999px; cursor: pointer;
+}
+.chip:hover { border-color: var(--ink-2); }
+.chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.chip .ic { width: 12px; height: 12px; }
+.chip [data-h="critical"] { color: var(--critical); }
+.chip [data-h="warning"] { color: var(--warning); }
+.chip [data-h="good"] { color: var(--good); }
+
+/* ---------- Next move ---------- */
+.nextmove {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px 28px;
+  padding: 18px 22px 20px;
+  background: var(--band); color: var(--on-band);
+  border-radius: var(--r);
+}
+.nm-main { min-width: 0; }
+.nm-eyebrow { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font: 600 11px/1.3 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--band-2); }
+.nm-eyebrow span:first-child { color: var(--on-band); }
+.nm-action { margin: 8px 0 6px; max-width: 46ch; font: 750 clamp(21px, 2.5vw, 30px)/1.12 var(--font-ui); font-stretch: 78%; text-wrap: balance; overflow-wrap: anywhere; }
+.nm-context { margin: 2px 0 0; font-size: 13.5px; color: var(--band-2); overflow-wrap: anywhere; }
+.nm-context .code { color: var(--on-band); }
+.nm-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
+.nm-facts li { padding: 5px 8px; font: 500 12px/1 var(--font-mono); border: 1px solid var(--band-line); border-radius: 3px; white-space: nowrap; }
+.nm-cta .btn { background: var(--on-band); border-color: var(--on-band); color: #1C4FC2; font-weight: 700; }
+.nm-cta .btn:hover { filter: none; background: rgba(255, 255, 255, 0.9); }
+.nextmove :focus-visible { outline-color: var(--on-band); }
+
+/* ---------- Grupos y paneles ---------- */
+.group { display: grid; gap: 10px; min-width: 0; }
+.group-label { display: flex; align-items: center; gap: 12px; margin: 8px 0 0; font: 600 11px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.group-label::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); }
+.grid-2 { --cols: 2; }
+.grid-3 { --cols: 3; }
+@media (max-width: 1060px) {
+  .grid-3 { --cols: 2; }
+  .grid-3 > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .grid-2, .grid-3 { --cols: 1; }
+}
+
+.panel { display: flex; flex-direction: column; min-width: 0; padding: 14px 16px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.q { margin: 0; font: 720 20px/1.12 var(--font-ui); font-stretch: 76%; text-wrap: balance; }
+.stat { margin: 0; display: grid; justify-items: end; gap: 3px; text-align: right; flex: none; }
+.stat-v { font: 650 30px/0.95 var(--font-ui); letter-spacing: -0.01em; white-space: nowrap; }
+.stat-u { font: 500 10.5px/1.1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.panel-sub { margin: 4px 0 8px; font-size: 13px; color: var(--ink-2); }
+.rows { list-style: none; margin: 0; padding: 0; display: grid; }
+.rows > li + li { border-top: 1px solid var(--line); }
+.panel-foot { display: grid; gap: 6px; margin-top: 4px; }
+.more { all: unset; cursor: pointer; align-self: flex-start; margin-top: auto; padding: 10px 2px 4px; font: 600 12.5px/1 var(--font-ui); color: var(--accent); }
+.more:hover { text-decoration: underline; }
+.more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.empty { display: flex; align-items: flex-start; gap: 8px; padding: 10px 0 12px; color: var(--muted); font-size: 13px; }
+.empty .ic { margin-top: 2px; }
+.empty[data-ok] .ic { color: var(--good); }
+.note { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+.row-btn {
+  all: unset; box-sizing: border-box; width: 100%; cursor: pointer;
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 0 10px;
+  padding: 9px 4px; border-radius: 3px;
+}
+.row-btn:hover { background: var(--surface-2); }
+.row-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sev { display: grid; place-items: center; width: 16px; height: 19px; }
+.sev[data-sev="blocked"] { color: var(--critical); }
+.sev[data-sev="overdue"] { color: var(--serious); }
+.sev[data-sev="slipping"] { color: var(--warning); }
+.sev[data-sev="active"] { color: var(--accent); }
+.sev[data-sev="idle"] { color: var(--line-2); }
+.sev[data-sev="done"] { color: var(--good); }
+.row-main { display: grid; gap: 2px; min-width: 0; }
+.row-title { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.row-detail { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 10px; margin-top: 2px; font-size: 12px; color: var(--muted); }
+.row-fig { align-self: start; padding-top: 1px; font: 600 13px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; color: var(--ink-2); }
+
+.who { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.who > span:last-child { overflow-wrap: anywhere; }
+.mono {
+  display: inline-grid; place-items: center; flex: none;
+  width: 17px; height: 17px; border-radius: 3px;
+  font: 700 10px/1 var(--font-mono); color: var(--ink-2);
+  border: 1px solid var(--line-2); background: var(--surface);
+}
+.mono[data-p="edson"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+/* Barras de impacto (entrega / margen) */
+.prow { display: grid; gap: 5px; padding: 10px 0 12px; }
+.prow-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.prow-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.prow-sub { margin: 0; font-size: 13px; color: var(--ink-2); }
+.track { position: relative; height: 10px; margin: 5px 0 3px; border-radius: 1px; }
+.track:focus-visible { outline-offset: 4px; }
+.tick { position: absolute; top: -3px; bottom: -3px; width: 1px; margin-left: -0.5px; background: var(--line); }
+.tick.zero { background: var(--line-2); }
+.bar { position: absolute; top: 0; bottom: 0; border-radius: 0 4px 4px 0; }
+.bar.neg { border-radius: 4px 0 0 4px; }
+.bar.crit { background: var(--critical); }
+.bar.neutral { background: var(--ink-2); }
+.loss { position: absolute; top: 0; bottom: 0; background: var(--critical-wash); border-radius: 0 4px 4px 0; }
+.plan-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; }
+.axis { position: relative; height: 14px; margin-top: 2px; font: 500 10.5px/1 var(--font-mono); color: var(--muted); }
+.axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.axis span:first-child { transform: none; }
+.axis span:last-child { transform: translateX(-100%); }
+.drivers { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 1px; }
+.drv {
+  all: unset; box-sizing: border-box; width: 100%; cursor: pointer;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 3px 4px; border-radius: 3px; font-size: 13px; color: var(--ink-2);
+}
+.drv:hover { background: var(--surface-2); }
+.drv:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.drv-t { min-width: 0; overflow-wrap: anywhere; }
+.drv-m { display: inline-flex; align-items: baseline; gap: 8px; flex: none; font: 500 12px/1.3 var(--font-mono); white-space: nowrap; }
+.drv-m .mono { align-self: center; }
+
+/* ---------- Proyectos ---------- */
+.section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; }
+.section-head .group-label { flex: 1 1 280px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-2); }
+.legend li { display: inline-flex; align-items: center; gap: 6px; }
+.legend .op { width: 22px; height: 14px; }
+
+.plist { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.prj {
+  display: grid; align-items: center; gap: 12px 20px; padding: 14px 16px;
+  grid-template-columns: minmax(0, 2.1fr) minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr) auto;
+}
+.prj + .prj { border-top: 1px solid var(--line); }
+.prj.head { padding-block: 9px; background: var(--surface-2); border-radius: var(--r) var(--r) 0 0; font: 600 10.5px/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.prj[data-closed] { opacity: 0.62; }
+.prj-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.prj-name { margin: 4px 0 2px; font: 700 15.5px/1.2 var(--font-ui); font-stretch: 88%; overflow-wrap: anywhere; }
+.prj-client { margin: 0; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.prj-cell { display: grid; gap: 3px; min-width: 0; }
+.prj-cell .lbl { display: none; font: 600 10.5px/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.prj-cell .val { font: 600 13.5px/1.25 var(--font-mono); font-variant-numeric: tabular-nums; }
+.prj-cell .sub { font-size: 12.5px; color: var(--ink-2); }
+.parties { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 2px; font: 500 12px/1 var(--font-mono); color: var(--ink-2); }
+.parties span { display: inline-flex; align-items: center; gap: 4px; }
+.prj-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.health { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 6px; font: 650 11.5px/1.1 var(--font-ui); border: 1px solid var(--line-2); border-radius: 999px; white-space: nowrap; }
+.health .ic { width: 12px; height: 12px; }
+.health[data-h="critical"] { color: var(--critical-text); } .health[data-h="critical"] .ic { color: var(--critical); }
+.health[data-h="warning"] { color: var(--warning-text); } .health[data-h="warning"] .ic { color: var(--warning); }
+.health[data-h="good"] { color: var(--good-text); } .health[data-h="good"] .ic { color: var(--good); }
+.tag { padding: 2px 7px; font: 600 11px/1.2 var(--font-mono); color: var(--ink-2); background: var(--surface-2); border-radius: 3px; }
+
+.route { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; }
+.route-n { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; margin-top: 3px; font: 500 10px/1 var(--font-mono); color: var(--muted); text-align: center; }
+.op { display: grid; place-items: center; height: 18px; border-radius: 2px; background: var(--surface-2); cursor: default; }
+.op .ic { width: 10px; height: 10px; }
+.op[data-s="done"] { background: var(--ink-2); color: var(--surface); }
+.op[data-s="active"] { background: var(--accent); color: var(--on-accent); }
+.op[data-s="todo"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-2); }
+.op[data-s="late"] { background: var(--serious); color: var(--on-status); }
+.op[data-s="blocked"] { background: var(--critical); color: #FFFFFF; }
+.op[data-s="none"] { background: var(--surface-2); }
+.op:focus-visible { outline-offset: 1px; }
+.prj-op { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-2); }
+
+@media (max-width: 1100px) {
+  .prj { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .prj.head { display: none; }
+  .prj-id { grid-column: 1 / -1; }
+  .prj-route { grid-column: 1 / -1; }
+  .prj-cell .lbl { display: block; }
+  .prj-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 560px) {
+  .prj { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- Tabla ---------- */
+.tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; }
+.tool { display: grid; gap: 4px; min-width: 0; font: 600 10.5px/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.tool.grow { flex: 1 1 220px; }
+.tool select, .tool input { min-height: 34px; padding: 6px 9px; font: 400 13px/1.2 var(--font-ui); letter-spacing: 0; text-transform: none; color: var(--ink); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r); min-width: 0; width: 100%; }
+.count { margin-left: auto; padding-bottom: 9px; font: 500 12px/1 var(--font-mono); color: var(--muted); white-space: nowrap; }
+.table-wrap { position: relative; overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: 13px; }
+th { padding: 9px 10px; text-align: left; font: 600 10.5px/1.2 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+th.num, td.num { text-align: right; }
+td { padding: 9px 10px; vertical-align: top; border-bottom: 1px solid var(--line); }
+td.num { white-space: nowrap; font-size: 12.5px; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: var(--surface-2); }
+tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+tbody tr:last-child td { border-bottom: 0; }
+tr.is-done td { color: var(--muted); }
+tr.is-done .row-title { color: var(--muted); font-weight: 500; }
+td.c-title { min-width: 260px; }
+td.c-who { min-width: 210px; }
+td.c-title .row-detail { display: block; margin-top: 2px; }
+td .small { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+.st { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
+.st .sev { height: auto; }
+.icon-btn { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r); border: 1px solid var(--line-2); color: var(--good-text); background: var(--surface); }
+.icon-btn:hover { background: var(--surface-2); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.msg td { padding: 18px 12px; color: var(--muted); cursor: default; }
+.msg:hover td { background: none; }
+
+/* ---------- Notas ---------- */
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px 28px; padding-top: 16px; border-top: 1px solid var(--line-2); font-size: 13px; color: var(--ink-2); }
+.notes h2 { grid-column: 1 / -1; margin: 0; font: 600 11px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.notes p { margin: 0; max-width: 68ch; }
+.notes b { color: var(--ink); }
+
+/* ---------- Diálogos ---------- */
+dialog {
+  width: min(700px, calc(100vw - 24px)); max-height: calc(100dvh - 24px);
+  padding: 0; overflow: auto;
+  color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line-2); border-radius: 6px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+}
+dialog::backdrop { background: var(--scrim); }
+.dlg-head { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 16px 20px 12px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.dlg-head h2 { margin: 0; font: 750 21px/1.15 var(--font-ui); font-stretch: 78%; }
+.dlg-meta { margin: 0; font: 500 11.5px/1.3 var(--font-mono); color: var(--muted); }
+fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.dlg-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; padding: 16px 20px 18px; }
+.f { display: grid; gap: 5px; min-width: 0; align-content: start; }
+.f.full { grid-column: 1 / -1; }
+.f > label, .f > .lbl { font: 600 10.5px/1.2 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); }
+.f input:not([type="radio"]):not([type="checkbox"]), .f select, .f textarea {
+  width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px;
+  font: 400 14px/1.3 var(--font-ui); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r);
+}
+.f textarea { resize: vertical; }
+.f input:focus-visible, .f select:focus-visible, .f textarea:focus-visible { outline-offset: 0; }
+.f.check { display: flex; align-items: center; gap: 10px; }
+.f.check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: none; }
+.f.check label { font: 500 13.5px/1.3 var(--font-ui); letter-spacing: 0; text-transform: none; color: var(--ink); }
+.hint { font-size: 12px; color: var(--muted); }
+.out { min-height: 38px; display: flex; align-items: center; font: 600 15px/1 var(--font-mono); }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--line-2); border-radius: var(--r); overflow: hidden; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.seg label { flex: 1 1 0; min-width: 76px; padding: 9px 8px; text-align: center; cursor: pointer; font: 600 13px/1.1 var(--font-ui); color: var(--ink-2); background: var(--surface); border-left: 1px solid var(--line-2); }
+.seg label:first-of-type { border-left: 0; }
+.seg label:hover { background: var(--surface-2); }
+.seg input:checked + label { background: var(--ink); color: var(--surface); }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -3px; }
+fieldset:disabled .seg label { cursor: default; }
+.dlg-foot { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--line); }
+.dlg-foot .danger { margin-right: auto; }
+@media (max-width: 560px) {
+  .dlg-body { grid-template-columns: minmax(0, 1fr); padding-inline: 16px; }
+  .dlg-head, .dlg-foot { padding-inline: 16px; }
+  .nextmove { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+}
+
+/* ---------- Tooltip y aviso ---------- */
+.tip { position: fixed; z-index: 40; max-width: 290px; padding: 7px 10px; pointer-events: none; font-size: 12.5px; line-height: 1.35; color: var(--surface); background: var(--ink); border-radius: 4px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2); }
+.tip strong { display: block; font-weight: 700; }
+.tip span { display: block; white-space: pre-line; opacity: 0.86; }
+.toast {
+  position: fixed; z-index: 50; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px);
+  padding: 10px 14px; font-size: 13.5px; color: var(--surface); background: var(--ink); border-radius: var(--r);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+.toast-btn { all: unset; cursor: pointer; font-weight: 700; color: var(--surface); text-decoration: underline; }
+.toast-btn:focus-visible { outline: 2px solid var(--surface); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .toast { animation: rise 160ms ease-out; }
+  @keyframes rise { from { transform: translate(-50%, 6px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+}
+</style>
+
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-stop" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M5.1 1h5.8L15 5.1v5.8L10.9 15H5.1L1 10.9V5.1zM4.2 7v2h7.6V7z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 4.6V8l2.4 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 16 16"><path d="M2.5 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-progress" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 3.4a4.6 4.6 0 0 1 0 9.2z"/></symbol>
+  <symbol id="i-circle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.6l3.1 3.1L13 4.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 1.2 15.4 14H.6zM7.1 5.6v4.6h1.8V5.6zm0 5.8v1.8h1.8v-1.8z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow">OmniStamp · Ejecución</p>
+      <h1>Project Execution Tracker</h1>
+    </div>
+    <div class="top-side">
+      <div class="top-meta">
+        <span id="cutDate">Corte: —</span>
+        <span id="sync" class="sync" data-mode="loading" tabindex="0" data-tip="Buscando los datos del tracker.">Conectando…</span>
+      </div>
+      <div class="top-actions">
+        <button type="button" class="btn" id="btnNewProject" hidden>Nuevo proyecto</button>
+        <button type="button" class="btn primary" id="btnNewItem" hidden><svg class="ic" aria-hidden="true"><use href="#i-plus"></use></svg>Pendiente</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="demo" id="demo" hidden>
+    <p id="demoText"></p>
+    <div class="demo-actions">
+      <button type="button" class="btn small ghost" id="btnDemoCancel" hidden>Cancelar</button>
+      <button type="button" class="btn small danger" id="btnDemoClear">Borrar ejemplos</button>
+    </div>
+  </div>
+
+  <nav class="filter" id="filterRow" aria-label="Filtrar por proyecto" hidden>
+    <span class="filter-label">Proyecto</span>
+    <div class="chips" id="projectChips"></div>
+  </nav>
+
+  <section class="nextmove" id="nextMove" aria-label="Next move" aria-live="polite">
+    <div class="nm-main">
+      <p class="nm-eyebrow"><span>Next move</span></p>
+      <p class="nm-action">Cargando pendientes…</p>
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g-estado">
+    <h2 class="group-label" id="g-estado">Estado</h2>
+    <div class="grid grid-2">
+      <article class="panel" id="p-atrasado" aria-labelledby="q-atrasado">
+        <header class="panel-head"><h3 class="q" id="q-atrasado">¿Qué está atrasado?</h3><p class="stat"><span class="stat-v">—</span><span class="stat-u"></span></p></header>
+        <p class="panel-sub">Cargando…</p>
+        <ul class="rows"></ul>
+        <div class="panel-foot" hidden></div>
+        <button type="button" class="more" hidden></button>
+      </article>
+      <article class="panel" id="p-bloqueos" aria-labelledby="q-bloqueos">
+        <header class="panel-head"><h3 class="q" id="q-bloqueos">¿Qué bloquea el proyecto?</h3><p class="stat"><span class="stat-v">—</span><span class="stat-u"></span></p></header>
+        <p class="panel-sub">Cargando…</p>
+        <ul class="rows"></ul>
+        <div class="panel-foot" hidden></div>
+        <button type="button" class="more" hidden></button>
+      </article>
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g-depende">
+    <h2 class="group-label" id="g-depende">Depende de</h2>
+    <div class="grid grid-3">
+      <article class="panel" id="p-edson" aria-labelledby="q-edson">
+        <header class="panel-head"><h3 class="q" id="q-edson">¿Qué necesita Edson?</h3><p class="stat"><span class="stat-v">—</span><span class="stat-u"></span></p></header>
+        <p class="panel-sub">Cargando…</p>
+        <ul class="rows"></ul>
+        <div class="panel-foot" hidden></div>
+        <button type="button" class="more" hidden></button>
+      </article>
+      <article class="panel" id="p-proveedor" aria-labelledby="q-proveedor">
+        <header class="panel-head"><h3 class="q" id="q-proveedor">¿Qué depende del proveedor?</h3><p class="stat"><span class="stat-v">—</span><span class="stat-u"></span></p></header>
+        <p class="panel-sub">Cargando…</p>
+        <ul class="rows"></ul>
+        <div class="panel-foot" hidden></div>
+        <button type="button" class="more" hidden></button>
+      </article>
+      <article class="panel" id="p-cliente" aria-labelledby="q-cliente">
+        <header class="panel-head"><h3 class="q" id="q-cliente">¿Qué depende del cliente?</h3><p class="stat"><span class="stat-v">—</span><span class="stat-u"></span></p></header>
+        <p class="panel-sub">Cargando…</p>
+        <ul class="rows"></ul>
+        <div class="panel-foot" hidden></div>
+        <button type="button" class="more" hidden></button>
+      </article>
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g-impacto">
+    <h2 class="group-label" id="g-impacto">Impacto</h2>
+    <div class="grid grid-2">
+      <article class="panel" id="p-entrega" aria-labelledby="q-entrega">
+        <header class="panel-head"><h3 class="q" id="q-entrega">¿Qué impacta entrega?</h3><p class="stat"><span class="stat-v">—</span><span class="stat-u"></span></p></header>
+        <p class="panel-sub">Cargando…</p>
+        <ul class="rows"></ul>
+        <div class="panel-foot" hidden></div>
+        <button type="button" class="more" hidden></button>
+      </article>
+      <article class="panel" id="p-margen" aria-labelledby="q-margen">
+        <header class="panel-head"><h3 class="q" id="q-margen">¿Qué impacta margen?</h3><p class="stat"><span class="stat-v">—</span><span class="stat-u"></span></p></header>
+        <p class="panel-sub">Cargando…</p>
+        <ul class="rows"></ul>
+        <div class="panel-foot" hidden></div>
+        <button type="button" class="more" hidden></button>
+      </article>
+    </div>
+  </section>
+
+  <section class="group" id="proyectos" aria-labelledby="g-proyectos">
+    <div class="section-head">
+      <h2 class="group-label" id="g-proyectos">Proyectos · ruta OP 10–80</h2>
+      <ul class="legend" aria-label="Estados de la ruta de operaciones">
+        <li><span class="op" data-s="done"><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg></span>Completa</li>
+        <li><span class="op" data-s="active"></span>En curso</li>
+        <li><span class="op" data-s="todo"></span>Por iniciar</li>
+        <li><span class="op" data-s="late"><svg class="ic" aria-hidden="true"><use href="#i-clock"></use></svg></span>Con atraso</li>
+        <li><span class="op" data-s="blocked"><svg class="ic" aria-hidden="true"><use href="#i-stop"></use></svg></span>Bloqueada</li>
+        <li><span class="op" data-s="none"></span>Sin pendientes</li>
+      </ul>
+    </div>
+    <div class="plist" id="projectList"><p class="note" style="padding:14px 16px">Cargando proyectos…</p></div>
+    <div><button type="button" class="link" id="closedToggle" hidden></button></div>
+  </section>
+
+  <section class="group" id="pendientes" aria-labelledby="g-pendientes">
+    <h2 class="group-label" id="g-pendientes">Todos los pendientes</h2>
+    <div class="tools">
+      <label class="tool" for="tLens">Vista
+        <select id="tLens">
+          <option value="abiertos">Abiertos</option>
+          <option value="atrasado">Atrasados</option>
+          <option value="bloqueos">Bloqueados</option>
+          <option value="edson">Necesita Edson</option>
+          <option value="proveedor">Depende del proveedor</option>
+          <option value="cliente">Depende del cliente</option>
+          <option value="entrega">Impactan entrega</option>
+          <option value="margen">Impactan margen</option>
+          <option value="hechos">Hechos</option>
+          <option value="todos">Todos</option>
+        </select>
+      </label>
+      <label class="tool" for="tParty">Depende de
+        <select id="tParty">
+          <option value="all">Cualquiera</option>
+          <option value="edson">Edson</option>
+          <option value="interno">Interno</option>
+          <option value="proveedor">Proveedor</option>
+          <option value="cliente">Cliente</option>
+        </select>
+      </label>
+      <label class="tool" for="tSort">Ordenar
+        <select id="tSort">
+          <option value="prioridad">Prioridad</option>
+          <option value="plan">Fecha plan</option>
+          <option value="atraso">Días de atraso</option>
+          <option value="proyecto">Proyecto y OP</option>
+        </select>
+      </label>
+      <label class="tool grow" for="tQ">Buscar
+        <input id="tQ" type="search" placeholder="Pendiente, proveedor, acción…" autocomplete="off">
+      </label>
+      <span class="count" id="tableCount"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Estado</th><th>Pendiente</th><th>Proyecto</th><th class="num">OP</th><th>Depende de</th>
+            <th class="num">Plan</th><th class="num">Pronóstico</th><th class="num">Atraso</th><th class="num">Entrega</th>
+            <th class="num">Costo</th><th class="num">Actualizado</th><th><span class="sr">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody id="itemRows"><tr class="msg"><td colspan="12">Cargando…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="notes" aria-labelledby="g-notas">
+    <h2 id="g-notas">Cómo se calcula</h2>
+    <p><b>Atrasado:</b> pendiente abierto con la fecha plan vencida o con un pronóstico posterior al plan. Los días van de la fecha plan a hoy o al pronóstico, lo que sea más tarde.</p>
+    <p><b>Bloqueado:</b> pendiente en estado Bloqueado. Los días cuentan desde que se marcó así.</p>
+    <p><b>Pronóstico de entrega:</b> fecha comprometida más el mayor impacto en entrega entre los pendientes abiertos del proyecto. Al cerrar un pendiente su impacto deja de contar.</p>
+    <p><b>Margen proyectado:</b> (precio − costo presupuestado − impactos de costo no recuperables) ÷ precio. Suma lo que ya ocurrió y lo que está en riesgo. Lo recuperable con el cliente aparece aparte, como por cobrar.</p>
+    <p><b>Salud del proyecto:</b> Crítico si la entrega se mueve, si el margen cae 8 pp o más, o si queda abajo de 10 %. En riesgo si hay atrasos, bloqueos o pérdida de margen. En control en cualquier otro caso.</p>
+    <p><b>Next move:</b> el pendiente abierto con más prioridad. Suman puntos estar bloqueado, los días de atraso, el impacto en entrega y en margen, vencer en 3 días o menos, y depender de Edson.</p>
+  </footer>
+</div>
+
+<dialog id="dlgItem" aria-labelledby="dlgItemTitle">
+  <form id="formItem" method="dialog" novalidate>
+    <header class="dlg-head"><h2 id="dlgItemTitle">Pendiente</h2><p class="dlg-meta" id="it-meta"></p></header>
+    <fieldset id="fsItem">
+      <div class="dlg-body">
+        <div class="f full"><label for="it-titulo">Pendiente</label><input id="it-titulo" maxlength="200" autocomplete="off" placeholder="Ej. Acero D2 para punzones"></div>
+        <div class="f"><label for="it-proyecto">Proyecto</label><select id="it-proyecto"></select></div>
+        <div class="f"><label for="it-op">Operación</label>
+          <select id="it-op">
+            <option value="">Sin OP</option>
+            <option value="10">OP 10 · Ingeniería y CAE</option>
+            <option value="20">OP 20 · Compras y material</option>
+            <option value="30">OP 30 · Fabricación de herramental</option>
+            <option value="40">OP 40 · Procesos externos</option>
+            <option value="50">OP 50 · Ensamble y ajuste</option>
+            <option value="60">OP 60 · Tryout y producción</option>
+            <option value="70">OP 70 · Calidad y liberación</option>
+            <option value="80">OP 80 · Embarque y cobranza</option>
+          </select>
+        </div>
+        <div class="f full"><span class="lbl" id="lbl-depende">Depende de</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lbl-depende">
+            <input type="radio" name="it-depende" id="dep-edson" value="edson"><label for="dep-edson">Edson</label>
+            <input type="radio" name="it-depende" id="dep-interno" value="interno"><label for="dep-interno">Interno</label>
+            <input type="radio" name="it-depende" id="dep-proveedor" value="proveedor"><label for="dep-proveedor">Proveedor</label>
+            <input type="radio" name="it-depende" id="dep-cliente" value="cliente"><label for="dep-cliente">Cliente</label>
+          </div>
+        </div>
+        <div class="f full"><label for="it-con">Con quién</label><input id="it-con" list="conList" maxlength="120" autocomplete="off" placeholder="Ej. distribuidor de acero, ingeniería del cliente, taller CNC"><datalist id="conList"></datalist></div>
+        <div class="f full"><span class="lbl" id="lbl-estado">Estado</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lbl-estado">
+            <input type="radio" name="it-estado" id="est-pendiente" value="pendiente"><label for="est-pendiente">Pendiente</label>
+            <input type="radio" name="it-estado" id="est-en_curso" value="en_curso"><label for="est-en_curso">En curso</label>
+            <input type="radio" name="it-estado" id="est-bloqueado" value="bloqueado"><label for="est-bloqueado">Bloqueado</label>
+            <input type="radio" name="it-estado" id="est-hecho" value="hecho"><label for="est-hecho">Hecho</label>
+          </div>
+        </div>
+        <div class="f full" id="f-bloqueo"><label for="it-bloqueo">Qué lo bloquea</label><input id="it-bloqueo" maxlength="200" autocomplete="off" placeholder="Ej. sin certificado de molino, el proveedor no libera"></div>
+        <div class="f"><label for="it-plan">Fecha plan</label><input type="date" id="it-plan"></div>
+        <div class="f"><label for="it-pronostico">Pronóstico</label><input type="date" id="it-pronostico"><span class="hint">Cuándo crees que realmente queda.</span></div>
+        <div class="f full"><label for="it-accion">Siguiente acción</label><textarea id="it-accion" rows="2" maxlength="300" placeholder="Qué hay que hacer o conseguir para moverlo"></textarea></div>
+        <div class="f full"><label for="it-detiene">Qué detiene si no avanza</label><input id="it-detiene" maxlength="200" autocomplete="off" placeholder="Ej. OP 30 maquinado de punzones"></div>
+        <div class="f"><label for="it-dias">Impacto en entrega (días)</label><input type="number" id="it-dias" min="0" step="1" inputmode="numeric"><span class="hint">Cuánto se mueve la entrega final si esto no se recupera.</span></div>
+        <div class="f"><label for="it-costo" id="it-costo-lbl">Impacto en costo (USD)</label><input type="number" id="it-costo" min="0" step="any" inputmode="decimal"><span class="hint">Costo extra esperado o ya incurrido.</span></div>
+        <div class="f full check"><input type="checkbox" id="it-recuperable"><label for="it-recuperable">Recuperable con el cliente (ECN o cargo extra)</label></div>
+        <div class="f full"><label for="it-notas">Notas</label><textarea id="it-notas" rows="2" maxlength="2000"></textarea></div>
+      </div>
+    </fieldset>
+    <footer class="dlg-foot">
+      <button type="button" class="btn danger" id="btnItemDelete">Eliminar</button>
+      <button type="button" class="btn" data-close>Cancelar</button>
+      <button type="submit" class="btn primary" id="btnItemSave">Guardar</button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog id="dlgProject" aria-labelledby="dlgProjectTitle">
+  <form id="formProject" method="dialog" novalidate>
+    <header class="dlg-head"><h2 id="dlgProjectTitle">Proyecto</h2><p class="dlg-meta" id="pr-meta"></p></header>
+    <fieldset id="fsProject">
+      <div class="dlg-body">
+        <div class="f"><label for="pr-codigo">Código</label><input id="pr-codigo" maxlength="24" autocomplete="off" placeholder="OS-2620"></div>
+        <div class="f"><label for="pr-estado">Estado</label>
+          <select id="pr-estado"><option value="activo">Activo</option><option value="pausa">En pausa</option><option value="cerrado">Cerrado</option></select>
+        </div>
+        <div class="f full"><label for="pr-nombre">Nombre</label><input id="pr-nombre" maxlength="160" autocomplete="off" placeholder="Ej. Troquel prototipo · bracket de suspensión"></div>
+        <div class="f"><label for="pr-cliente">Cliente</label><input id="pr-cliente" maxlength="120" autocomplete="off"></div>
+        <div class="f"><label for="pr-tipo">Tipo</label><input id="pr-tipo" list="tipoList" maxlength="60" autocomplete="off"><datalist id="tipoList"></datalist></div>
+        <div class="f full"><span class="lbl" id="lbl-moneda">Moneda</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lbl-moneda">
+            <input type="radio" name="pr-moneda" id="mon-usd" value="USD"><label for="mon-usd">USD</label>
+            <input type="radio" name="pr-moneda" id="mon-mxn" value="MXN"><label for="mon-mxn">MXN</label>
+          </div>
+        </div>
+        <div class="f"><label for="pr-precio">Precio de venta</label><input type="number" id="pr-precio" min="0" step="any" inputmode="decimal"></div>
+        <div class="f"><label for="pr-costo">Costo presupuestado</label><input type="number" id="pr-costo" min="0" step="any" inputmode="decimal"></div>
+        <div class="f"><label for="pr-entrega">Entrega comprometida</label><input type="date" id="pr-entrega"></div>
+        <div class="f"><span class="lbl">Margen plan</span><output id="pr-margen" class="out" for="pr-precio pr-costo">—</output></div>
+        <div class="f full"><label for="pr-notas">Notas</label><textarea id="pr-notas" rows="2" maxlength="2000"></textarea></div>
+      </div>
+    </fieldset>
+    <footer class="dlg-foot">
+      <button type="button" class="btn danger" id="btnProjectDelete">Eliminar</button>
+      <button type="button" class="btn" data-close>Cancelar</button>
+      <button type="submit" class="btn primary" id="btnProjectSave">Guardar</button>
+    </footer>
+  </form>
+</dialog>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ---------- Catálogos ---------- */
+  const OPS = [
+    [10, 'Ingeniería y CAE'], [20, 'Compras y material'], [30, 'Fabricación de herramental'], [40, 'Procesos externos'],
+    [50, 'Ensamble y ajuste'], [60, 'Tryout y producción'], [70, 'Calidad y liberación'], [80, 'Embarque y cobranza'],
+  ];
+  const OP_NAME = new Map(OPS);
+  const PARTY = {
+    edson: { label: 'Edson', mono: 'E' },
+    interno: { label: 'Interno', mono: 'I' },
+    proveedor: { label: 'Proveedor', mono: 'P' },
+    cliente: { label: 'Cliente', mono: 'C' },
+  };
+  const PARTY_ORDER = ['edson', 'proveedor', 'cliente', 'interno'];
+  const ESTADOS = ['pendiente', 'en_curso', 'bloqueado', 'hecho'];
+  const TIPOS = ['Herramental prototipo', 'Prototipo', 'Bajo volumen', 'Ingeniería + modificación', 'Servicio láser', 'Simulación / CAE'];
+  const SEV = {
+    blocked: ['stop', 'Bloqueado'], overdue: ['clock', 'Vencido'], slipping: ['trend', 'Se atrasa'],
+    active: ['progress', 'En curso'], idle: ['circle', 'Pendiente'], done: ['check', 'Hecho'],
+  };
+  const HEALTH = { critical: ['stop', 'Crítico'], warning: ['alert', 'En riesgo'], good: ['check', 'En control'] };
+  const OP_GLYPH = { done: 'check', late: 'clock', blocked: 'stop' };
+  const OP_STATE_LABEL = { done: 'completa', active: 'en curso', todo: 'por iniciar', late: 'con atraso', blocked: 'bloqueada', none: 'sin pendientes' };
+  const LENSES = ['abiertos', 'atrasado', 'bloqueos', 'edson', 'proveedor', 'cliente', 'entrega', 'margen', 'hechos', 'todos'];
+  const SORTS = ['prioridad', 'plan', 'atraso', 'proyecto'];
+  const PANELS = ['atrasado', 'bloqueos', 'edson', 'proveedor', 'cliente', 'entrega', 'margen'];
+  const EMPTY = {
+    atrasado: 'Aquí aparecen los pendientes con fecha plan vencida o con pronóstico posterior al plan.',
+    bloqueos: 'Aquí aparecen los pendientes bloqueados, con su causa y lo que detienen.',
+    edson: 'Aquí aparecen las decisiones y acciones que dependen de Edson.',
+    proveedor: 'Aquí aparecen los pendientes en manos de proveedores, con su fecha prometida.',
+    cliente: 'Aquí aparece lo que espera respuesta, aprobación o pago del cliente.',
+    entrega: 'Aquí aparece cuántos días se mueve cada entrega y qué la mueve.',
+    margen: 'Aquí aparece el margen plan contra el proyectado y qué lo erosiona.',
+  };
+  const NONE = {
+    atrasado: 'Nada atrasado: los pendientes abiertos van en fecha.',
+    bloqueos: 'Sin bloqueos.',
+    edson: 'Nada espera a Edson.',
+    proveedor: 'Nada depende de proveedores.',
+    cliente: 'Nada espera al cliente.',
+    entrega: 'Todas las entregas van en fecha.',
+    margen: 'Ningún proyecto pierde margen.',
+  };
+  const LS_DATA = 'pet-data-v1';
+  const LS_UI = 'pet-ui-v1';
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const DAY = 86400000;
+  const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const DIA = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+
+  /* ---------- Estado ---------- */
+  const state = {
+    today: todayISO(),
+    mode: 'loading',            // loading | db | local | nodb
+    persist: true,
+    canWrite: null,
+    readOnly: false,
+    projects: [], items: [],
+    gotP: false, gotI: false,
+    filter: 'all',
+    expanded: new Set(),
+    table: { lens: 'abiertos', party: 'all', q: '', sort: 'prioridad' },
+    showClosed: false,
+  };
+  let db = null;
+  let mem = null;
+  const subs = [];
+
+  const $ = (sel) => document.querySelector(sel);
+
+  /* ---------- Utilidades ---------- */
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function todayISO() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+  function dnum(s) {
+    if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    const [y, m, d] = s.split('-').map(Number);
+    const t = Date.UTC(y, m - 1, d);
+    return Number.isFinite(t) ? Math.round(t / DAY) : null;
+  }
+  function isoOf(n) { return new Date(n * DAY).toISOString().slice(0, 10); }
+  function addDays(s, n) { const t = dnum(s); return t == null ? '' : isoOf(t + n); }
+  function fdate(s, weekday) {
+    const t = dnum(s);
+    if (t == null) return '—';
+    const d = new Date(t * DAY);
+    const base = `${pad(d.getUTCDate())} ${MES[d.getUTCMonth()]}`;
+    return weekday ? `${DIA[d.getUTCDay()]} ${base}` : base;
+  }
+  function flong(s) {
+    const t = dnum(s);
+    if (t == null) return '—';
+    const d = new Date(t * DAY);
+    return `${DIA[d.getUTCDay()]} ${pad(d.getUTCDate())} ${MES[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  }
+  function daysSince(stamp, T) {
+    const t = Date.parse(stamp);
+    if (!Number.isFinite(t) || T == null) return null;
+    const d = new Date(t);
+    return Math.max(0, T - Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY));
+  }
+  function rel(n) {
+    if (n === 0) return 'hoy';
+    if (n === 1) return 'mañana';
+    if (n === -1) return 'ayer';
+    return n > 0 ? `en ${n} d` : `hace ${-n} d`;
+  }
+  function money(n, cur) { return `${cur} ${Math.round(n).toLocaleString('es-MX')}`; }
+  function pct(x) { return x == null ? '—' : `${x < 0 ? '−' : ''}${Math.abs(x * 100).toFixed(1)}%`; }
+  function ppLoss(erosion) {
+    if (Math.abs(erosion) < 0.0005) return '0.0 pp';
+    return `${erosion > 0 ? '−' : '+'}${Math.abs(erosion * 100).toFixed(1)} pp`;
+  }
+  const plural = (n, one, many) => (n === 1 ? one : many);
+  const str = (v, max = 400) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const nonneg = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+  const isoOr = (v) => (dnum(v) != null ? v : '');
+  const fold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const canEdit = () => !state.readOnly && (state.mode === 'db' || state.mode === 'local');
+  const loaded = () => state.mode === 'nodb' || (state.gotP && state.gotI);
+
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    if (attrs) {
+      for (const [k, v] of Object.entries(attrs)) {
+        if (v == null || v === false) continue;
+        if (k === 'class') el.className = v;
+        else if (k === 'style') el.style.cssText = v;
+        else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
+        else el.setAttribute(k, v === true ? '' : String(v));
+      }
+    }
+    for (const kid of kids.flat(Infinity)) {
+      if (kid == null || kid === false) continue;
+      el.append(kid instanceof Node ? kid : String(kid));
+    }
+    return el;
+  }
+  function icon(name) {
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('class', 'ic');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(SVGNS, 'use');
+    use.setAttribute('href', `#i-${name}`);
+    svg.append(use);
+    return svg;
+  }
+
+  /* ---------- Normalización (los datos compartidos no son confiables) ---------- */
+  function normProject(r) {
+    const id = String(r.id);
+    return {
+      id,
+      codigo: str(r.codigo, 24) || id.slice(0, 8).toUpperCase(),
+      nombre: str(r.nombre, 160) || 'Proyecto sin nombre',
+      cliente: str(r.cliente, 120),
+      tipo: str(r.tipo, 60),
+      moneda: r.moneda === 'MXN' ? 'MXN' : 'USD',
+      precio: nonneg(r.precio),
+      costo: nonneg(r.costo),
+      entrega: isoOr(r.entrega),
+      estado: ['activo', 'pausa', 'cerrado'].includes(r.estado) ? r.estado : 'activo',
+      notas: str(r.notas, 2000),
+      ejemplo: r.ejemplo === true,
+      actualizado: str(r.actualizado, 40),
+    };
+  }
+  function normItem(r) {
+    const op = Number(r.op);
+    return {
+      id: String(r.id),
+      proyecto: str(r.proyecto, 200),
+      titulo: str(r.titulo, 200) || 'Pendiente sin título',
+      op: OP_NAME.has(op) ? op : null,
+      dependeDe: PARTY[r.dependeDe] ? r.dependeDe : 'interno',
+      con: str(r.con, 120),
+      estado: ESTADOS.includes(r.estado) ? r.estado : 'pendiente',
+      plan: isoOr(r.plan),
+      pronostico: isoOr(r.pronostico),
+      accion: str(r.accion, 300),
+      bloqueo: str(r.bloqueo, 200),
+      bloqueadoDesde: isoOr(r.bloqueadoDesde),
+      detiene: str(r.detiene, 200),
+      impactoDias: Math.round(nonneg(r.impactoDias)),
+      impactoCosto: nonneg(r.impactoCosto),
+      recuperable: r.recuperable === true,
+      hechoEl: isoOr(r.hechoEl),
+      notas: str(r.notas, 2000),
+      ejemplo: r.ejemplo === true,
+      actualizado: str(r.actualizado, 40),
+    };
+  }
+
+  /* ---------- Cálculos ---------- */
+  function derive() {
+    const T = dnum(state.today);
+    const projects = state.projects.map(normProject).sort((a, b) => a.codigo.localeCompare(b.codigo, 'es'));
+    const byId = new Map(projects.map((p) => [p.id, p]));
+    for (const p of projects) p.items = [];
+    const items = state.items.map(normItem);
+    for (const it of items) {
+      it.p = byId.get(it.proyecto) || null;
+      it.open = it.estado !== 'hecho';
+      const plan = dnum(it.plan);
+      const fc = dnum(it.pronostico);
+      it.late = 0;
+      it.lateKind = null;
+      if (it.open && plan != null) {
+        const eff = fc != null ? Math.max(T, fc) : T;
+        if (eff > plan) { it.late = eff - plan; it.lateKind = T > plan ? 'vencido' : 'proyectado'; }
+      }
+      const since = dnum(it.bloqueadoDesde);
+      it.blockedDays = it.open && it.estado === 'bloqueado' && since != null ? Math.max(0, T - since) : 0;
+      it.dueIn = it.open && plan != null ? plan - T : null;
+      it.sev = !it.open ? 'done'
+        : it.estado === 'bloqueado' ? 'blocked'
+        : it.lateKind === 'vencido' ? 'overdue'
+        : it.lateKind === 'proyectado' ? 'slipping'
+        : it.estado === 'en_curso' ? 'active' : 'idle';
+      it.staleDays = daysSince(it.actualizado, T);
+      if (it.p) it.p.items.push(it);
+    }
+    for (const p of projects) p.m = metrics(p);
+    for (const it of items) it.score = scoreOf(it);
+    return { projects, items };
+  }
+
+  function metrics(p) {
+    let slip = 0, lost = 0, risk = 0, recov = 0;
+    const open = p.items.filter((i) => i.open);
+    for (const it of p.items) {
+      if (it.open && it.impactoDias > slip) slip = it.impactoDias;
+      if (it.impactoCosto > 0) {
+        if (it.recuperable) { if (it.open) recov += it.impactoCosto; }
+        else if (it.open) risk += it.impactoCosto;
+        else lost += it.impactoCosto;
+      }
+    }
+    const planM = p.precio > 0 ? (p.precio - p.costo) / p.precio : null;
+    const projM = p.precio > 0 ? (p.precio - p.costo - lost - risk) / p.precio : null;
+    const erosion = planM != null ? planM - projM : 0;
+    const forecast = p.entrega ? addDays(p.entrega, slip) : '';
+    const lateN = open.filter((i) => i.late > 0).length;
+    const blockedN = open.filter((i) => i.estado === 'bloqueado').length;
+    const exposed = open.some((i) => i.impactoCosto > 0 && !i.recuperable);
+    let health = 'good';
+    if (slip > 0 || erosion >= 0.08 || (projM != null && projM < 0.1)) health = 'critical';
+    else if (lateN || blockedN || erosion > 0.0005 || exposed) health = 'warning';
+    const parties = {};
+    for (const k of PARTY_ORDER) parties[k] = open.filter((i) => i.dependeDe === k).length;
+    const openOps = open.filter((i) => i.op).map((i) => i.op);
+    return {
+      slip, lost, risk, recov, planM, projM, erosion, forecast, lateN, blockedN,
+      openN: open.length, health, parties, ops: opStates(p.items),
+      currentOp: openOps.length ? Math.min(...openOps) : null,
+    };
+  }
+
+  function opStates(items) {
+    const m = new Map(OPS.map(([op]) => [op, { op, n: 0, done: 0, open: 0, late: 0, blocked: 0, active: 0 }]));
+    for (const it of items) {
+      const s = m.get(it.op);
+      if (!s) continue;
+      s.n++;
+      if (!it.open) { s.done++; continue; }
+      s.open++;
+      if (it.estado === 'bloqueado') s.blocked++;
+      if (it.late > 0) s.late++;
+      if (it.estado === 'en_curso') s.active++;
+    }
+    for (const s of m.values()) {
+      s.state = s.n === 0 ? 'none'
+        : s.blocked ? 'blocked'
+        : s.late ? 'late'
+        : s.open === 0 ? 'done'
+        : (s.active || s.done) ? 'active' : 'todo';
+    }
+    return [...m.values()];
+  }
+
+  function scoreOf(it) {
+    if (!it.open) return -1;
+    let s = 0;
+    if (it.estado === 'bloqueado') s += 30 + Math.min(it.blockedDays, 14);
+    s += Math.min(it.late, 20) * 1.5;
+    s += Math.min(it.impactoDias, 15) * 4;
+    const price = it.p ? it.p.precio : 0;
+    if (it.impactoCosto > 0 && price > 0) s += Math.min((it.impactoCosto / price) * 100, 10) * (it.recuperable ? 1 : 3);
+    if (it.dueIn != null && it.dueIn <= 3) s += 5;
+    if (it.dependeDe === 'edson') s += 10;
+    return s;
+  }
+  const byScore = (a, b) => b.score - a.score || (a.dueIn ?? 1e9) - (b.dueIn ?? 1e9);
+
+  function scope(D) {
+    const visible = D.projects.filter((p) => p.estado !== 'cerrado');
+    if (state.filter !== 'all' && loaded() && !visible.some((p) => p.id === state.filter)) state.filter = 'all';
+    const projects = state.filter === 'all' ? visible : visible.filter((p) => p.id === state.filter);
+    const ids = new Set(projects.map((p) => p.id));
+    const items = D.items.filter((i) => i.p && ids.has(i.p.id));
+    return { projects, items, open: items.filter((i) => i.open) };
+  }
+
+  /* ---------- Render ---------- */
+  let rq = 0;
+  function scheduleRender() {
+    if (rq) return;
+    rq = requestAnimationFrame(() => { rq = 0; render(); });
+  }
+
+  function render() {
+    state.today = todayISO();
+    const D = derive();
+    const S = scope(D);
+    renderTop(D);
+    renderChips(D);
+    renderDemo();
+    renderNextMove(S);
+    renderPanels(S);
+    renderProjects(D, S);
+    renderTable(S);
+  }
+
+  function renderTop() {
+    $('#cutDate').textContent = `Corte: ${flong(state.today)}`;
+    const sync = $('#sync');
+    const MODES = {
+      loading: ['Conectando…', 'Buscando los datos del tracker.'],
+      db: ['Datos compartidos', 'Los cambios se guardan para todos los que abren este tracker.'],
+      local: ['Solo en este navegador', 'Sin conexión a Claude: los datos viven en este navegador. Ábrelo desde claude.ai para compartirlo.'],
+      nodb: ['Sin acceso a los datos', 'No se pudo abrir la base de datos del tracker. Inicia sesión o pide acceso a quien lo comparte.'],
+    };
+    let [label, tip] = MODES[state.mode];
+    if (state.mode === 'local' && !state.persist) { label = 'Sin guardar'; tip = 'Este navegador no deja guardar datos: los cambios se pierden al cerrar.'; }
+    if (state.mode === 'db' && state.readOnly) { label = 'Solo lectura'; tip = 'Puedes ver el tracker pero no editarlo.'; }
+    sync.textContent = label;
+    sync.dataset.mode = state.mode;
+    sync.setAttribute('data-tip', tip);
+    $('#btnNewItem').hidden = !canEdit();
+    $('#btnNewProject').hidden = !canEdit();
+  }
+
+  function renderChips(D) {
+    const visible = D.projects.filter((p) => p.estado !== 'cerrado');
+    $('#filterRow').hidden = visible.length < 2;
+    const chips = [h('button', { type: 'button', class: 'chip', 'data-filter': 'all', 'aria-pressed': String(state.filter === 'all') }, `Todos · ${visible.length}`)];
+    for (const p of visible) {
+      const [ic, label] = HEALTH[p.m.health];
+      const sym = h('span', { 'data-h': p.m.health }, icon(ic));
+      chips.push(h('button', {
+        type: 'button', class: 'chip', 'data-filter': p.id, 'aria-pressed': String(state.filter === p.id),
+        'aria-label': `${p.codigo}, ${label}`, 'data-tip': `${p.codigo} · ${label}\n${p.nombre}`,
+      }, sym, p.codigo));
+    }
+    $('#projectChips').replaceChildren(...chips);
+  }
+
+  function renderDemo() {
+    const n = state.projects.filter((p) => p.ejemplo === true).length;
+    const box = $('#demo');
+    box.hidden = n === 0 || !loaded();
+    if (box.hidden) return;
+    $('#demoText').replaceChildren(
+      h('b', null, `${n} ${plural(n, 'proyecto de ejemplo', 'proyectos de ejemplo')}.`),
+      ' Están aquí para mostrar cómo responde el tracker. Bórralos cuando cargues tus proyectos reales.');
+    $('#btnDemoClear').hidden = !canEdit();
+  }
+
+  function renderNextMove(S) {
+    const box = $('#nextMove');
+    const block = (eyebrow, action, context, cta) => box.replaceChildren(...[
+      h('div', { class: 'nm-main' },
+        h('p', { class: 'nm-eyebrow' }, h('span', null, 'Next move'), eyebrow ? h('span', null, eyebrow) : null),
+        h('p', { class: 'nm-action' }, action),
+        context ? h('p', { class: 'nm-context' }, context) : null),
+      cta ? h('div', { class: 'nm-cta' }, cta) : null,
+    ].filter(Boolean));
+    if (!loaded()) { block(null, 'Cargando pendientes…'); return; }
+    if (state.mode === 'nodb') {
+      block(null, 'No hay acceso a los datos de este tracker', 'Inicia sesión en claude.ai o pide acceso a quien lo compartió.');
+      return;
+    }
+    if (!state.projects.length) {
+      block(null, 'Registra tu primer proyecto',
+        'Captura precio, costo presupuestado y fecha comprometida. Luego agrega sus pendientes con fecha plan, de quién dependen y su impacto. Con eso el tracker contesta las siete preguntas.',
+        canEdit() ? h('button', { type: 'button', class: 'btn', onclick: () => openProject(null) }, 'Nuevo proyecto') : null);
+      return;
+    }
+    const nm = [...S.open].sort(byScore)[0];
+    if (!nm) {
+      block(null, 'Sin pendientes abiertos', 'Todo lo registrado está cerrado. Agrega los siguientes pasos de tus proyectos.',
+        canEdit() ? h('button', { type: 'button', class: 'btn', onclick: () => openItem(null) }, 'Nuevo pendiente') : null);
+      return;
+    }
+    const facts = [];
+    if (nm.estado === 'bloqueado') facts.push(`Bloqueado ${nm.blockedDays} d`);
+    if (nm.late > 0) facts.push(nm.lateKind === 'vencido' ? `Vencido +${nm.late} d` : `Se atrasa +${nm.late} d`);
+    else if (nm.dueIn != null) facts.push(`Vence ${rel(nm.dueIn)}`);
+    if (nm.impactoDias > 0) facts.push(`+${nm.impactoDias} d en entrega`);
+    if (nm.impactoCosto > 0) facts.push(`${money(nm.impactoCosto, nm.p.moneda)} ${nm.recuperable ? 'por cobrar' : 'de margen'}`);
+    const who = `Depende de ${PARTY[nm.dependeDe].label}${nm.con && nm.dependeDe !== 'edson' ? ` · ${nm.con}` : ''}`;
+    box.replaceChildren(
+      h('div', { class: 'nm-main' },
+        h('p', { class: 'nm-eyebrow' }, h('span', null, 'Next move'), h('span', null, who)),
+        h('p', { class: 'nm-action' }, nm.accion || nm.titulo),
+        h('p', { class: 'nm-context' }, nm.accion ? `${nm.titulo} · ` : '', h('span', { class: 'code' }, nm.p.codigo), ` ${nm.p.nombre}`),
+        nm.detiene ? h('p', { class: 'nm-context' }, `Destraba: ${nm.detiene}`) : null,
+        facts.length ? h('ul', { class: 'nm-facts', 'aria-label': 'Por qué va primero' }, facts.map((f) => h('li', null, f))) : null),
+      h('div', { class: 'nm-cta' }, h('button', { type: 'button', class: 'btn', onclick: () => openItem(nm.id) }, canEdit() ? 'Actualizar' : 'Ver detalle')));
+  }
+
+  function setPanel(key, o) {
+    const el = document.getElementById(`p-${key}`);
+    el.querySelector('.stat-v').textContent = o.value;
+    el.querySelector('.stat-u').textContent = o.unit || '';
+    const sub = el.querySelector('.panel-sub');
+    sub.textContent = o.sub || '';
+    sub.hidden = !o.sub;
+    const rows = o.rows || [];
+    const open = state.expanded.has(key);
+    const list = el.querySelector('.rows');
+    if (rows.length) list.replaceChildren(...(open ? rows : rows.slice(0, 5)));
+    else if (o.empty) list.replaceChildren(h('li', { class: 'empty', 'data-ok': o.ok ? '' : null }, icon(o.ok ? 'check' : 'circle'), h('span', null, o.empty)));
+    else list.replaceChildren();
+    const foot = el.querySelector('.panel-foot');
+    const footKids = (o.foot || []).filter(Boolean);
+    foot.replaceChildren(...footKids);
+    foot.hidden = !footKids.length;
+    const more = el.querySelector('.more');
+    more.hidden = rows.length <= 5;
+    more.dataset.panel = key;
+    more.textContent = open ? 'Ver menos' : `Ver los ${rows.length}`;
+  }
+
+  function sevIcon(it) {
+    const [ic, label] = SEV[it.sev];
+    return h('span', { class: 'sev', 'data-sev': it.sev }, icon(ic), h('span', { class: 'sr' }, label));
+  }
+  function whoChip(it, short) {
+    const P = PARTY[it.dependeDe];
+    const text = it.dependeDe === 'edson' ? P.label : short ? (it.con || P.label) : it.con ? `${P.label} · ${it.con}` : P.label;
+    return h('span', { class: 'who' }, h('span', { class: 'mono', 'data-p': it.dependeDe, 'aria-hidden': 'true' }, P.mono), h('span', null, text));
+  }
+  function itemRow(it, o = {}) {
+    return h('li', null,
+      h('button', { type: 'button', class: 'row-btn', 'data-item': it.id },
+        sevIcon(it),
+        h('span', { class: 'row-main' },
+          h('span', { class: 'row-title' }, o.title || it.titulo),
+          (o.details || []).filter(Boolean).map((d) => h('span', { class: 'row-detail' }, d)),
+          h('span', { class: 'row-meta' },
+            h('span', { class: 'code' }, it.p ? it.p.codigo : '—'),
+            o.noWho ? null : whoChip(it, o.whoShort),
+            o.meta ? h('span', null, o.meta) : null)),
+        o.fig != null ? h('span', { class: 'row-fig', 'data-tone': o.tone || null }, o.fig) : null));
+  }
+  const lateTone = (it) => (it.lateKind === 'vencido' ? 'serious' : 'warning');
+  function planLine(it) {
+    if (!it.plan) return 'Sin fecha plan';
+    return `Plan ${fdate(it.plan)} · ${it.pronostico ? `pronóstico ${fdate(it.pronostico)}` : 'sin pronóstico'}`;
+  }
+
+  function renderPanels(S) {
+    if (!loaded() || state.mode === 'nodb') {
+      const msg = state.mode === 'nodb' ? 'Sin acceso a los datos.' : 'Cargando…';
+      for (const k of PANELS) setPanel(k, { value: '—', sub: msg, rows: [] });
+      return;
+    }
+    const noData = !state.projects.length;
+    const empty = (k) => (noData ? EMPTY[k] : NONE[k]);
+    const open = S.open;
+
+    // ¿Qué está atrasado?
+    const late = open.filter((i) => i.late > 0).sort((a, b) => b.late - a.late || byScore(a, b));
+    const overdue = late.filter((i) => i.lateKind === 'vencido').length;
+    const slipping = late.length - overdue;
+    setPanel('atrasado', {
+      value: late.length, unit: plural(late.length, 'pendiente', 'pendientes'),
+      sub: late.length ? `${overdue} ${plural(overdue, 'vencido', 'vencidos')} · ${slipping} con pronóstico tarde` : '',
+      rows: late.map((it) => itemRow(it, { fig: `+${it.late} d`, tone: lateTone(it), details: [planLine(it)] })),
+      empty: empty('atrasado'), ok: !noData,
+    });
+
+    // ¿Qué bloquea el proyecto?
+    const blocked = open.filter((i) => i.estado === 'bloqueado').sort((a, b) => b.blockedDays - a.blockedDays || byScore(a, b));
+    const moving = blocked.filter((i) => i.impactoDias > 0).length;
+    setPanel('bloqueos', {
+      value: blocked.length, unit: plural(blocked.length, 'bloqueo', 'bloqueos'),
+      sub: blocked.length ? `El más antiguo lleva ${blocked[0].blockedDays} d${moving ? ` · ${moving} ${plural(moving, 'mueve', 'mueven')} la entrega` : ''}` : '',
+      rows: blocked.map((it) => itemRow(it, {
+        fig: `${it.blockedDays} d`, tone: 'critical',
+        details: [`Por: ${it.bloqueo || 'causa sin registrar'}`, it.detiene ? `Detiene: ${it.detiene}` : null],
+      })),
+      empty: empty('bloqueos'), ok: !noData,
+    });
+
+    // ¿Qué necesita Edson?
+    const ed = open.filter((i) => i.dependeDe === 'edson').sort(byScore);
+    const week = ed.filter((i) => i.dueIn != null && i.dueIn <= 7).length;
+    setPanel('edson', {
+      value: ed.length, unit: plural(ed.length, 'pendiente', 'pendientes'),
+      sub: ed.length ? (week ? `${week} ${plural(week, 'vence', 'vencen')} en los próximos 7 días` : 'Nada vence esta semana') : '',
+      rows: ed.map((it) => itemRow(it, {
+        title: it.accion || it.titulo,
+        details: [it.accion ? it.titulo : null],
+        fig: it.late > 0 ? `+${it.late} d` : it.dueIn == null ? 'sin fecha' : it.dueIn <= 1 ? rel(it.dueIn) : fdate(it.plan, true),
+        tone: it.late > 0 ? lateTone(it) : it.dueIn != null && it.dueIn <= 2 ? 'warning' : null,
+        noWho: true,
+      })),
+      empty: empty('edson'), ok: !noData,
+    });
+
+    // ¿Qué depende del proveedor? / ¿del cliente?
+    for (const party of ['proveedor', 'cliente']) {
+      const list = open.filter((i) => i.dependeDe === party).sort(byScore);
+      const lateN = list.filter((i) => i.late > 0).length;
+      const names = new Set(list.map((i) => fold(i.con)).filter(Boolean)).size;
+      const who = party === 'proveedor' ? plural(names, 'proveedor', 'proveedores') : plural(names, 'contacto', 'contactos');
+      setPanel(party, {
+        value: list.length, unit: plural(list.length, 'pendiente', 'pendientes'),
+        sub: list.length ? `${lateN} ${plural(lateN, 'atrasado', 'atrasados')} · ${names} ${who}` : '',
+        rows: list.map((it) => itemRow(it, {
+          details: [it.accion ? `Siguiente: ${it.accion}` : null],
+          fig: it.late > 0 ? `+${it.late} d` : it.plan ? fdate(it.plan) : 'sin fecha',
+          tone: it.late > 0 ? lateTone(it) : null,
+          whoShort: true,
+        })),
+        empty: empty(party), ok: !noData,
+      });
+    }
+
+    // ¿Qué impacta entrega?
+    const projs = S.projects;
+    const moved = projs.filter((p) => p.m.slip > 0).sort((a, b) => b.m.slip - a.m.slip);
+    const maxSlip = moved.length ? moved[0].m.slip : 0;
+    const dMax = niceDays(maxSlip);
+    const onTime = projs.filter((p) => !p.m.slip);
+    const unassessed = open.filter((i) => i.late > 0 && !i.impactoDias).length;
+    setPanel('entrega', {
+      value: maxSlip ? `+${maxSlip} d` : '0 d', unit: 'mayor desvío',
+      sub: projs.length ? (moved.length ? `${moved.length} de ${projs.length} ${plural(projs.length, 'proyecto mueve', 'proyectos mueven')} su entrega` : '') : '',
+      rows: moved.map((p) => slipRow(p, dMax)),
+      empty: empty('entrega'), ok: !noData,
+      foot: [
+        moved.length ? axis(dMax, dStep(dMax), (v) => `${v} d`) : null,
+        onTime.length && moved.length ? h('p', { class: 'note' }, `En fecha: ${listCodes(onTime, (p) => p.entrega ? `${p.codigo} (${fdate(p.entrega)})` : p.codigo)}.`) : null,
+        unassessed ? h('p', { class: 'note' }, `${unassessed} ${plural(unassessed, 'pendiente atrasado no tiene', 'pendientes atrasados no tienen')} impacto en entrega registrado.`) : null,
+      ],
+    });
+
+    // ¿Qué impacta margen?
+    const priced = projs.filter((p) => p.m.planM != null).sort((a, b) => b.m.erosion - a.m.erosion || a.codigo.localeCompare(b.codigo, 'es'));
+    const losing = priced.filter((p) => p.m.erosion > 0.0005);
+    const recovByCur = {};
+    for (const p of priced) if (p.m.recov > 0) recovByCur[p.moneda] = (recovByCur[p.moneda] || 0) + p.m.recov;
+    const recovTxt = Object.entries(recovByCur).map(([c, v]) => money(v, c)).join(' + ');
+    const lo = Math.min(0, ...priced.map((p) => p.m.projM));
+    const hi = Math.max(0.1, ...priced.map((p) => Math.max(p.m.planM, p.m.projM)));
+    const dom = [Math.floor(lo * 10) / 10, Math.ceil(hi * 10 + 0.0001) / 10];
+    setPanel('margen', {
+      value: losing.length ? ppLoss(losing[0].m.erosion) : '0.0 pp', unit: 'peor caída',
+      sub: priced.length
+        ? `${losing.length} de ${priced.length} ${plural(priced.length, 'proyecto pierde', 'proyectos pierden')} margen${recovTxt ? ` · ${recovTxt} por cobrar` : ''}`
+        : (projs.length ? 'Captura precio y costo presupuestado para ver el margen.' : ''),
+      rows: priced.map((p) => marginRow(p, dom)),
+      empty: projs.length && !priced.length ? 'Sin proyectos con precio registrado.' : empty('margen'), ok: !noData && !projs.length,
+      foot: [
+        priced.length ? axis(dom[1], 0.1, (v) => `${Math.round(v * 100)}%`, dom[0]) : null,
+        priced.length ? h('p', { class: 'note' }, 'Barra: margen proyectado. Marca vertical: margen plan. Zona roja: lo que se perdió o está en riesgo.') : null,
+      ],
+    });
+  }
+
+  function niceDays(v) {
+    if (v <= 5) return 5;
+    if (v <= 10) return 10;
+    if (v <= 15) return 15;
+    if (v <= 20) return 20;
+    return Math.ceil(v / 10) * 10;
+  }
+  function dStep(max) { return max <= 15 ? 5 : 10; }
+  function listCodes(ps, fmt) {
+    const shown = ps.slice(0, 4).map(fmt);
+    return ps.length > 4 ? `${shown.join(', ')} y ${ps.length - 4} más` : shown.join(', ');
+  }
+  function tickValues(min, max, step) {
+    const out = [];
+    for (let v = min; v <= max + step / 1000; v += step) out.push(Math.round(v * 1000) / 1000);
+    return out;
+  }
+  function axis(max, step, fmt, min = 0) {
+    const span = max - min;
+    return h('div', { class: 'axis', 'aria-hidden': 'true' },
+      tickValues(min, max, step).map((v) => h('span', { style: `left:${(((v - min) / span) * 100).toFixed(2)}%` }, fmt(v))));
+  }
+  function ticks(max, step, min = 0) {
+    const span = max - min;
+    return tickValues(min, max, step).map((v) => h('span', { class: `tick${v === 0 ? ' zero' : ''}`, style: `left:${(((v - min) / span) * 100).toFixed(2)}%` }));
+  }
+
+  function slipRow(p, max) {
+    const drivers = p.items.filter((i) => i.open && i.impactoDias > 0).sort((a, b) => b.impactoDias - a.impactoDias || byScore(a, b));
+    const dates = p.entrega ? `Comprometida ${fdate(p.entrega, true)} → pronóstico ${fdate(p.m.forecast, true)}` : 'Sin fecha comprometida';
+    const tip = `+${p.m.slip} d · ${p.codigo}\n${p.entrega ? `Comprometida ${fdate(p.entrega)} · pronóstico ${fdate(p.m.forecast)}` : 'Sin fecha comprometida'}`;
+    return h('li', { class: 'prow' },
+      h('div', { class: 'prow-head' },
+        h('span', { class: 'code' }, p.codigo),
+        h('span', { class: 'prow-name' }, p.nombre),
+        h('span', { class: 'row-fig', 'data-tone': 'critical' }, `+${p.m.slip} d`)),
+      h('p', { class: 'prow-sub' }, dates),
+      h('div', { class: 'track', role: 'img', tabindex: '0', 'aria-label': `${p.codigo}: la entrega se mueve ${p.m.slip} días`, 'data-tip': tip },
+        ticks(max, dStep(max)),
+        h('span', { class: 'bar crit', style: `left:0;width:${Math.min(100, (p.m.slip / max) * 100).toFixed(2)}%` })),
+      h('ul', { class: 'drivers' }, drivers.slice(0, 3).map((it) =>
+        h('li', null, h('button', { type: 'button', class: 'drv', 'data-item': it.id },
+          h('span', { class: 'drv-t' }, it.titulo),
+          h('span', { class: 'drv-m' }, h('span', { class: 'mono', 'data-p': it.dependeDe, 'aria-hidden': 'true' }, PARTY[it.dependeDe].mono), h('span', { 'data-tone': 'critical' }, `+${it.impactoDias} d`)))))));
+  }
+
+  function marginRow(p, dom) {
+    const m = p.m;
+    const span = dom[1] - dom[0];
+    const x = (v) => Math.max(0, Math.min(100, ((v - dom[0]) / span) * 100));
+    const z = x(0), proj = x(m.projM), plan = x(m.planM);
+    const drivers = p.items
+      .filter((i) => i.impactoCosto > 0 && (i.open || !i.recuperable))
+      .sort((a, b) => b.impactoCosto - a.impactoCosto);
+    const losing = m.erosion > 0.0005;
+    const tip = `${pct(m.projM)} proyectado · ${p.codigo}\nPlan ${pct(m.planM)} · ${ppLoss(m.erosion)}` +
+      (m.lost ? `\nYa ocurrió: ${money(m.lost, p.moneda)}` : '') + (m.risk ? `\nEn riesgo: ${money(m.risk, p.moneda)}` : '') +
+      (m.recov ? `\nPor cobrar: ${money(m.recov, p.moneda)}` : '');
+    return h('li', { class: 'prow' },
+      h('div', { class: 'prow-head' },
+        h('span', { class: 'code' }, p.codigo),
+        h('span', { class: 'prow-name' }, p.nombre),
+        h('span', { class: 'row-fig', 'data-tone': losing ? 'critical' : null }, losing ? ppLoss(m.erosion) : 'sin cambio')),
+      h('p', { class: 'prow-sub' }, `Plan ${pct(m.planM)} → proyectado ${pct(m.projM)}${m.recov ? ` · ${money(m.recov, p.moneda)} por cobrar` : ''}`),
+      h('div', { class: 'track', role: 'img', tabindex: '0', 'data-tip': tip,
+        'aria-label': `${p.codigo}: margen plan ${pct(m.planM)}, proyectado ${pct(m.projM)}` },
+        ticks(dom[1], 0.1, dom[0]),
+        h('span', { class: `bar neutral${m.projM < 0 ? ' neg' : ''}`, style: `left:${Math.min(z, proj).toFixed(2)}%;width:${Math.abs(proj - z).toFixed(2)}%` }),
+        losing ? h('span', { class: 'loss', style: `left:${proj.toFixed(2)}%;width:${Math.max(0, plan - proj).toFixed(2)}%` }) : null,
+        h('span', { class: 'plan-mark', style: `left:${plan.toFixed(2)}%` })),
+      drivers.length ? h('ul', { class: 'drivers' }, drivers.slice(0, 3).map((it) => {
+        const kind = it.recuperable ? ['por cobrar', 'muted'] : it.open ? ['en riesgo', 'serious'] : ['ya ocurrió', 'critical'];
+        return h('li', null, h('button', { type: 'button', class: 'drv', 'data-item': it.id },
+          h('span', { class: 'drv-t' }, it.titulo),
+          h('span', { class: 'drv-m' }, h('span', null, money(it.impactoCosto, p.moneda)), h('span', { 'data-tone': kind[1] }, kind[0]))));
+      })) : null);
+  }
+
+  function renderProjects(D, S) {
+    const list = $('#projectList');
+    const toggle = $('#closedToggle');
+    if (!loaded() || state.mode === 'nodb') {
+      list.replaceChildren(h('p', { class: 'note', style: 'padding:14px 16px' }, state.mode === 'nodb' ? 'Sin acceso a los datos.' : 'Cargando proyectos…'));
+      toggle.hidden = true;
+      return;
+    }
+    const closed = D.projects.filter((p) => p.estado === 'cerrado');
+    if (!D.projects.length) {
+      list.replaceChildren(h('div', { class: 'empty', style: 'padding:14px 16px' }, icon('circle'),
+        h('span', null, 'Aún no hay proyectos. Cada proyecto aparecerá aquí con su ruta de operaciones OP 10–80, su entrega, su margen y quién tiene sus pendientes.')));
+      toggle.hidden = true;
+      return;
+    }
+    let rows = S.projects;
+    if (state.filter === 'all' && state.showClosed) rows = rows.concat(closed);
+    const head = h('div', { class: 'prj head', 'aria-hidden': 'true' },
+      h('span', null, 'Proyecto'), h('span', null, 'Ruta de operaciones'), h('span', null, 'Entrega'),
+      h('span', null, 'Margen'), h('span', null, 'Pendientes abiertos'), h('span', null, ''));
+    list.replaceChildren(head, ...(rows.length ? rows.map(projectRow) : [h('p', { class: 'note', style: 'padding:14px 16px' }, 'No hay proyectos activos.')]));
+    toggle.hidden = !closed.length || state.filter !== 'all';
+    toggle.textContent = state.showClosed ? 'Ocultar proyectos cerrados' : `Mostrar ${closed.length} ${plural(closed.length, 'proyecto cerrado', 'proyectos cerrados')}`;
+  }
+
+  function projectRow(p) {
+    const m = p.m;
+    const [hic, hlabel] = HEALTH[m.health];
+    const opTip = (s) => `OP ${s.op} · ${OP_NAME.get(s.op)}\n${s.n
+      ? `${s.done} de ${s.n} ${plural(s.n, 'hecho', 'hechos')}${s.late ? ` · ${s.late} con atraso` : ''}${s.blocked ? ` · ${s.blocked} ${plural(s.blocked, 'bloqueado', 'bloqueados')}` : ''}`
+      : 'Sin pendientes'}`;
+    return h('article', { class: 'prj', 'data-closed': p.estado === 'cerrado' ? '' : null, 'aria-label': `${p.codigo} ${p.nombre}` },
+      h('div', { class: 'prj-id' },
+        h('div', { class: 'prj-top' },
+          h('span', { class: 'code' }, p.codigo),
+          h('span', { class: 'health', 'data-h': m.health }, icon(hic), hlabel),
+          p.estado === 'pausa' ? h('span', { class: 'tag' }, 'En pausa') : null,
+          p.estado === 'cerrado' ? h('span', { class: 'tag' }, 'Cerrado') : null,
+          p.ejemplo ? h('span', { class: 'tag' }, 'Ejemplo') : null),
+        h('h3', { class: 'prj-name' }, p.nombre),
+        h('p', { class: 'prj-client' }, [p.cliente, p.tipo].filter(Boolean).join(' · ') || 'Sin cliente registrado')),
+      h('div', { class: 'prj-route' },
+        h('div', { class: 'route', role: 'list', 'aria-label': `Ruta de operaciones de ${p.codigo}` },
+          m.ops.map((s) => h('span', {
+            class: 'op', role: 'listitem', tabindex: '0', 'data-s': s.state, 'data-tip': opTip(s),
+            'aria-label': `OP ${s.op} ${OP_NAME.get(s.op)}: ${OP_STATE_LABEL[s.state]}`,
+          }, OP_GLYPH[s.state] ? icon(OP_GLYPH[s.state]) : null))),
+        h('div', { class: 'route-n', 'aria-hidden': 'true' }, OPS.map(([op]) => h('span', null, op))),
+        h('p', { class: 'prj-op' }, m.currentOp ? `En OP ${m.currentOp} · ${OP_NAME.get(m.currentOp)}` : m.openN ? 'Pendientes sin OP asignada' : 'Sin pendientes abiertos')),
+      h('div', { class: 'prj-cell' },
+        h('span', { class: 'lbl' }, 'Entrega'),
+        h('span', { class: 'val' }, p.entrega ? (m.slip ? `${fdate(p.entrega)} → ${fdate(m.forecast)}` : fdate(p.entrega, true)) : '—'),
+        h('span', { class: 'sub', 'data-tone': m.slip ? 'critical' : p.entrega ? 'good' : null }, m.slip ? `+${m.slip} d de desvío` : p.entrega ? 'En fecha' : 'Sin fecha comprometida')),
+      h('div', { class: 'prj-cell' },
+        h('span', { class: 'lbl' }, 'Margen'),
+        h('span', { class: 'val' }, m.planM == null ? '—' : m.erosion > 0.0005 ? `${pct(m.planM)} → ${pct(m.projM)}` : pct(m.planM)),
+        h('span', { class: 'sub', 'data-tone': m.planM == null ? null : m.erosion > 0.0005 ? 'critical' : 'good' },
+          m.planM == null ? 'Sin precio registrado' : m.erosion > 0.0005 ? ppLoss(m.erosion) : 'Sin pérdida registrada')),
+      h('div', { class: 'prj-cell' },
+        h('span', { class: 'lbl' }, 'Pendientes abiertos'),
+        h('span', { class: 'val' }, `${m.openN} ${plural(m.openN, 'abierto', 'abiertos')}`),
+        h('span', { class: 'sub' }, `${m.lateN} ${plural(m.lateN, 'atrasado', 'atrasados')} · ${m.blockedN} ${plural(m.blockedN, 'bloqueado', 'bloqueados')}`),
+        h('span', { class: 'parties', 'aria-label': PARTY_ORDER.map((k) => `${PARTY[k].label} ${m.parties[k]}`).join(', ') },
+          PARTY_ORDER.filter((k) => m.parties[k]).map((k) => h('span', { 'data-tip': `${PARTY[k].label}: ${m.parties[k]} ${plural(m.parties[k], 'pendiente', 'pendientes')}` },
+            h('span', { class: 'mono', 'data-p': k, 'aria-hidden': 'true' }, PARTY[k].mono), m.parties[k])))),
+      h('div', { class: 'prj-actions' }, canEdit() ? [
+        h('button', { type: 'button', class: 'btn small', onclick: () => openItem(null, { proyecto: p.id }) }, '+ Pendiente'),
+        h('button', { type: 'button', class: 'btn small', onclick: () => openProject(p.id) }, 'Editar'),
+      ] : h('button', { type: 'button', class: 'btn small', onclick: () => openProject(p.id) }, 'Ver')));
+  }
+
+  const LENS_FN = {
+    abiertos: (i) => i.open,
+    atrasado: (i) => i.open && i.late > 0,
+    bloqueos: (i) => i.open && i.estado === 'bloqueado',
+    edson: (i) => i.open && i.dependeDe === 'edson',
+    proveedor: (i) => i.open && i.dependeDe === 'proveedor',
+    cliente: (i) => i.open && i.dependeDe === 'cliente',
+    entrega: (i) => i.open && i.impactoDias > 0,
+    margen: (i) => i.impactoCosto > 0 && (i.open || !i.recuperable),
+    hechos: (i) => !i.open,
+    todos: () => true,
+  };
+  const SORT_FN = {
+    prioridad: (a, b) => (a.open === b.open ? (a.open ? byScore(a, b) : (b.hechoEl || '').localeCompare(a.hechoEl || '')) : a.open ? -1 : 1),
+    plan: (a, b) => (dnum(a.plan) ?? 1e9) - (dnum(b.plan) ?? 1e9) || byScore(a, b),
+    atraso: (a, b) => b.late - a.late || byScore(a, b),
+    proyecto: (a, b) => (a.p ? a.p.codigo : '').localeCompare(b.p ? b.p.codigo : '', 'es') || (a.op ?? 999) - (b.op ?? 999) || (dnum(a.plan) ?? 1e9) - (dnum(b.plan) ?? 1e9),
+  };
+
+  function renderTable(S) {
+    const tb = $('#itemRows');
+    const msg = (t) => h('tr', { class: 'msg' }, h('td', { colspan: '12' }, t));
+    if (!loaded() || state.mode === 'nodb') {
+      tb.replaceChildren(msg(state.mode === 'nodb' ? 'Sin acceso a los datos.' : 'Cargando…'));
+      $('#tableCount').textContent = '';
+      return;
+    }
+    const t = state.table;
+    let rows = S.items.filter(LENS_FN[t.lens] || LENS_FN.abiertos);
+    if (t.party !== 'all') rows = rows.filter((i) => i.dependeDe === t.party);
+    const q = fold(t.q.trim());
+    if (q) rows = rows.filter((i) => fold([i.titulo, i.accion, i.con, i.bloqueo, i.detiene, i.notas, i.p ? i.p.codigo : '', i.p ? i.p.nombre : ''].join(' ')).includes(q));
+    rows.sort(SORT_FN[t.sort] || SORT_FN.prioridad);
+    $('#tableCount').textContent = `${rows.length} de ${S.items.length}`;
+    if (!rows.length) {
+      tb.replaceChildren(msg(state.projects.length ? 'Ningún pendiente coincide con esta vista.' : 'Aún no hay pendientes. Crea un proyecto y agrega el primero.'));
+      return;
+    }
+    tb.replaceChildren(...rows.map(itemTr));
+  }
+
+  function itemTr(it) {
+    const cur = it.p ? it.p.moneda : 'USD';
+    const [, sevLabel] = SEV[it.sev];
+    return h('tr', { 'data-item': it.id, class: it.open ? null : 'is-done', tabindex: '0' },
+      h('td', null, h('span', { class: 'st' }, sevIcon(it), h('span', { 'aria-hidden': 'true' }, sevLabel))),
+      h('td', { class: 'c-title' }, h('span', { class: 'row-title' }, it.titulo), it.accion ? h('span', { class: 'row-detail' }, it.accion) : null),
+      h('td', null, h('span', { class: 'code' }, it.p ? it.p.codigo : '—')),
+      h('td', { class: 'num' }, it.op ?? '—'),
+      h('td', { class: 'c-who' }, whoChip(it)),
+      h('td', { class: 'num' }, fdate(it.plan)),
+      h('td', { class: 'num' }, it.pronostico ? fdate(it.pronostico) : '—'),
+      h('td', { class: 'num', 'data-tone': it.late ? lateTone(it) : null }, it.late ? `+${it.late} d` : '—'),
+      h('td', { class: 'num', 'data-tone': it.open && it.impactoDias ? 'critical' : null }, it.impactoDias ? `+${it.impactoDias} d` : '—'),
+      h('td', { class: 'num' }, it.impactoCosto ? money(it.impactoCosto, cur) : '—',
+        it.impactoCosto && it.recuperable ? h('span', { class: 'small' }, 'recuperable') : null),
+      h('td', { class: 'num', 'data-tone': it.open && it.staleDays != null && it.staleDays > 7 ? 'warning' : null }, it.staleDays == null ? '—' : rel(-it.staleDays)),
+      h('td', null, canEdit() && it.open
+        ? h('button', { type: 'button', class: 'icon-btn', 'data-done': it.id, 'aria-label': `Marcar hecho: ${it.titulo}`, 'data-tip': 'Marcar hecho' }, icon('check'))
+        : null));
+  }
+
+  /* ---------- Escritura ---------- */
+  function newId(col) {
+    if (state.mode === 'db') return db.collection(col).doc().id;
+    return `${col[0]}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  }
+  async function write(dbOp, localOp) {
+    if (state.mode === 'local') { localOp(); persistLocal(); pullLocal(); return true; }
+    if (state.mode !== 'db' || state.readOnly) { toast('Este tracker está en solo lectura.'); return false; }
+    try { await dbOp(); return true; }
+    catch (e) {
+      if (e && e.code === 'unavailable') {
+        await sleep(300 + Math.random() * 700);
+        try { await dbOp(); return true; } catch (e2) { return writeFailed(e2); }
+      }
+      return writeFailed(e);
+    }
+  }
+  function writeFailed(e) {
+    const code = e && e.code;
+    if (code === 'invalid_argument' && state.canWrite == null) {
+      state.readOnly = true;
+      scheduleRender();
+      toast('No tienes permiso para editar este tracker. Queda en solo lectura.');
+    } else if (code === 'quota_exceeded') {
+      toast('La base de datos está llena. Borra pendientes cerrados o proyectos viejos para liberar espacio.');
+    } else if (code === 'revoked') {
+      toast('Se retiró tu acceso a los datos. Recarga la página.');
+    } else {
+      toast('No se pudo guardar. Revisa tu conexión e inténtalo de nuevo.');
+    }
+    return false;
+  }
+  const store = {
+    set: (col, id, body) => write(() => db.collection(col).doc(id).set(body), () => { mem[col][id] = body; }),
+    update: (col, id, patch) => write(() => db.collection(col).doc(id).update(patch), () => { if (mem[col][id]) Object.assign(mem[col][id], patch); }),
+    del: (col, id) => write(() => db.collection(col).doc(id).delete(), () => { delete mem[col][id]; }),
+  };
+
+  async function markDone(id) {
+    if (!canEdit()) return;
+    const raw = state.items.find((x) => x.id === id);
+    if (!raw) return;
+    const prev = normItem(raw);
+    const ok = await store.update('items', id, { estado: 'hecho', hechoEl: state.today, bloqueadoDesde: '', actualizado: new Date().toISOString() });
+    if (ok) {
+      toast(`Hecho: ${prev.titulo}`, {
+        label: 'Deshacer',
+        fn: () => store.update('items', id, { estado: prev.estado, hechoEl: prev.hechoEl, bloqueadoDesde: prev.bloqueadoDesde, actualizado: new Date().toISOString() }),
+      });
+    }
+  }
+
+  /* ---------- Diálogo de pendiente ---------- */
+  const dlgItem = $('#dlgItem');
+  let editingItem = null;
+  const radio = (name) => { const r = document.querySelector(`input[name="${name}"]:checked`); return r ? r.value : ''; };
+  const setRadio = (name, v) => { for (const r of document.querySelectorAll(`input[name="${name}"]`)) r.checked = r.value === v; };
+
+  function openItem(id, preset = {}) {
+    const projects = state.projects.map(normProject).sort((a, b) => a.codigo.localeCompare(b.codigo, 'es'));
+    const raw = id ? state.items.find((x) => x.id === id) : null;
+    if (id && !raw) { toast('Ese pendiente ya no existe.'); return; }
+    const it = raw ? normItem(raw) : null;
+    const choices = projects.filter((p) => p.estado !== 'cerrado' || (it && it.proyecto === p.id));
+    if (!choices.length) {
+      toast('Primero registra un proyecto.');
+      if (canEdit()) openProject(null);
+      return;
+    }
+    editingItem = id || null;
+    const sel = $('#it-proyecto');
+    sel.replaceChildren(...choices.map((p) => h('option', { value: p.id }, `${p.codigo} · ${p.nombre}`)));
+    const want = it ? it.proyecto : preset.proyecto || (state.filter !== 'all' ? state.filter : '');
+    sel.value = choices.some((p) => p.id === want) ? want : choices[0].id;
+    const names = [...new Set(state.items.map((x) => str(x.con, 120)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+    $('#conList').replaceChildren(...names.map((n) => h('option', { value: n })));
+    $('#it-titulo').value = it ? it.titulo : '';
+    $('#it-op').value = it && it.op ? String(it.op) : '';
+    setRadio('it-depende', it ? it.dependeDe : preset.dependeDe || 'interno');
+    $('#it-con').value = it ? it.con : '';
+    setRadio('it-estado', it ? it.estado : 'pendiente');
+    $('#it-plan').value = it ? it.plan : '';
+    $('#it-pronostico').value = it ? it.pronostico : '';
+    $('#it-accion').value = it ? it.accion : '';
+    $('#it-bloqueo').value = it ? it.bloqueo : '';
+    $('#it-detiene').value = it ? it.detiene : '';
+    $('#it-dias').value = it && it.impactoDias ? String(it.impactoDias) : '';
+    $('#it-costo').value = it && it.impactoCosto ? String(it.impactoCosto) : '';
+    $('#it-recuperable').checked = it ? it.recuperable : false;
+    $('#it-notas').value = it ? it.notas : '';
+    $('#dlgItemTitle').textContent = it ? (canEdit() ? 'Editar pendiente' : 'Pendiente') : 'Nuevo pendiente';
+    $('#it-meta').textContent = it ? itemMeta(it) : '';
+    $('#fsItem').disabled = !canEdit();
+    $('#btnItemSave').hidden = !canEdit();
+    const del = $('#btnItemDelete');
+    del.hidden = !it || !canEdit();
+    disarm(del, 'Eliminar');
+    syncItemForm();
+    dlgItem.showModal();
+    if (!it && canEdit()) $('#it-titulo').focus();
+  }
+  function itemMeta(it) {
+    const parts = [];
+    if (it.estado === 'bloqueado' && it.bloqueadoDesde) parts.push(`Bloqueado desde ${fdate(it.bloqueadoDesde)}`);
+    if (it.estado === 'hecho' && it.hechoEl) parts.push(`Hecho el ${fdate(it.hechoEl)}`);
+    const since = daysSince(it.actualizado, dnum(state.today));
+    if (since != null) parts.push(`Actualizado ${rel(-since)}`);
+    if (it.ejemplo) parts.push('Ejemplo');
+    return parts.join(' · ');
+  }
+  function syncItemForm() {
+    $('#f-bloqueo').hidden = radio('it-estado') !== 'bloqueado';
+    const p = state.projects.find((x) => x.id === $('#it-proyecto').value);
+    $('#it-costo-lbl').textContent = `Impacto en costo (${p && p.moneda === 'MXN' ? 'MXN' : 'USD'})`;
+  }
+
+  $('#formItem').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!canEdit()) return;
+    const titulo = $('#it-titulo').value.trim();
+    if (!titulo) { toast('Escribe qué es el pendiente.'); $('#it-titulo').focus(); return; }
+    const proyecto = $('#it-proyecto').value;
+    const proj = state.projects.find((p) => p.id === proyecto);
+    if (!proj) { toast('Elige un proyecto.'); return; }
+    const prevRaw = editingItem ? state.items.find((x) => x.id === editingItem) : null;
+    const prev = prevRaw ? normItem(prevRaw) : null;
+    const estado = radio('it-estado') || 'pendiente';
+    const body = {
+      proyecto,
+      titulo: titulo.slice(0, 200),
+      op: Number($('#it-op').value) || null,
+      dependeDe: radio('it-depende') || 'interno',
+      con: $('#it-con').value.trim().slice(0, 120),
+      estado,
+      plan: isoOr($('#it-plan').value),
+      pronostico: isoOr($('#it-pronostico').value),
+      accion: $('#it-accion').value.trim().slice(0, 300),
+      bloqueo: estado === 'bloqueado' ? $('#it-bloqueo').value.trim().slice(0, 200) : '',
+      bloqueadoDesde: estado === 'bloqueado' ? (prev && prev.estado === 'bloqueado' && prev.bloqueadoDesde ? prev.bloqueadoDesde : state.today) : '',
+      detiene: $('#it-detiene').value.trim().slice(0, 200),
+      impactoDias: Math.round(nonneg($('#it-dias').value)),
+      impactoCosto: Math.round(nonneg($('#it-costo').value) * 100) / 100,
+      recuperable: $('#it-recuperable').checked,
+      hechoEl: estado === 'hecho' ? (prev && prev.estado === 'hecho' && prev.hechoEl ? prev.hechoEl : state.today) : '',
+      notas: $('#it-notas').value.trim().slice(0, 2000),
+      ejemplo: prev ? prev.ejemplo : proj.ejemplo === true,
+      actualizado: new Date().toISOString(),
+    };
+    const id = editingItem || newId('items');
+    const save = $('#btnItemSave');
+    save.disabled = true;
+    const ok = await store.set('items', id, body);
+    save.disabled = false;
+    if (ok) { dlgItem.close(); toast(editingItem ? 'Pendiente actualizado' : 'Pendiente agregado'); }
+  });
+  $('#btnItemDelete').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (!editingItem || !canEdit()) return;
+    if (!btn.hasAttribute('data-armed')) { arm(btn, 'Confirmar: eliminar'); return; }
+    btn.disabled = true;
+    const ok = await store.del('items', editingItem);
+    btn.disabled = false;
+    if (ok) { dlgItem.close(); toast('Pendiente eliminado'); }
+  });
+  $('#it-proyecto').addEventListener('change', syncItemForm);
+  for (const r of document.querySelectorAll('input[name="it-estado"]')) r.addEventListener('change', syncItemForm);
+
+  /* ---------- Diálogo de proyecto ---------- */
+  const dlgProject = $('#dlgProject');
+  let editingProject = null;
+  $('#tipoList').replaceChildren(...TIPOS.map((t) => h('option', { value: t })));
+
+  function openProject(id) {
+    const raw = id ? state.projects.find((x) => x.id === id) : null;
+    if (id && !raw) { toast('Ese proyecto ya no existe.'); return; }
+    const p = raw ? normProject(raw) : null;
+    editingProject = id || null;
+    $('#pr-codigo').value = p ? p.codigo : '';
+    $('#pr-estado').value = p ? p.estado : 'activo';
+    $('#pr-nombre').value = p ? p.nombre : '';
+    $('#pr-cliente').value = p ? p.cliente : '';
+    $('#pr-tipo').value = p ? p.tipo : '';
+    setRadio('pr-moneda', p ? p.moneda : 'USD');
+    $('#pr-precio').value = p && p.precio ? String(p.precio) : '';
+    $('#pr-costo').value = p && p.costo ? String(p.costo) : '';
+    $('#pr-entrega').value = p ? p.entrega : '';
+    $('#pr-notas').value = p ? p.notas : '';
+    $('#dlgProjectTitle').textContent = p ? (canEdit() ? 'Editar proyecto' : 'Proyecto') : 'Nuevo proyecto';
+    const n = p ? state.items.filter((x) => x.proyecto === p.id).length : 0;
+    $('#pr-meta').textContent = p ? `${n} ${plural(n, 'pendiente', 'pendientes')}${p.ejemplo ? ' · Ejemplo' : ''}` : '';
+    $('#fsProject').disabled = !canEdit();
+    $('#btnProjectSave').hidden = !canEdit();
+    const del = $('#btnProjectDelete');
+    del.hidden = !p || !canEdit();
+    disarm(del, 'Eliminar');
+    syncMargin();
+    dlgProject.showModal();
+    if (!p && canEdit()) $('#pr-codigo').focus();
+  }
+  function syncMargin() {
+    const precio = nonneg($('#pr-precio').value), costo = nonneg($('#pr-costo').value);
+    $('#pr-margen').textContent = precio > 0 ? pct((precio - costo) / precio) : '—';
+  }
+  $('#pr-precio').addEventListener('input', syncMargin);
+  $('#pr-costo').addEventListener('input', syncMargin);
+
+  $('#formProject').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!canEdit()) return;
+    const nombre = $('#pr-nombre').value.trim();
+    if (!nombre) { toast('Escribe el nombre del proyecto.'); $('#pr-nombre').focus(); return; }
+    const prev = editingProject ? normProject(state.projects.find((x) => x.id === editingProject) || { id: editingProject }) : null;
+    const body = {
+      codigo: ($('#pr-codigo').value.trim() || `P-${String(state.projects.length + 1).padStart(3, '0')}`).slice(0, 24),
+      nombre: nombre.slice(0, 160),
+      cliente: $('#pr-cliente').value.trim().slice(0, 120),
+      tipo: $('#pr-tipo').value.trim().slice(0, 60),
+      moneda: radio('pr-moneda') === 'MXN' ? 'MXN' : 'USD',
+      precio: Math.round(nonneg($('#pr-precio').value) * 100) / 100,
+      costo: Math.round(nonneg($('#pr-costo').value) * 100) / 100,
+      entrega: isoOr($('#pr-entrega').value),
+      estado: $('#pr-estado').value,
+      notas: $('#pr-notas').value.trim().slice(0, 2000),
+      ejemplo: prev ? prev.ejemplo : false,
+      actualizado: new Date().toISOString(),
+    };
+    const id = editingProject || newId('projects');
+    const save = $('#btnProjectSave');
+    save.disabled = true;
+    const ok = await store.set('projects', id, body);
+    save.disabled = false;
+    if (ok) {
+      dlgProject.close();
+      toast(editingProject ? 'Proyecto actualizado' : 'Proyecto creado', editingProject ? null : { label: 'Agregar pendiente', fn: () => openItem(null, { proyecto: id }) });
+    }
+  });
+  $('#btnProjectDelete').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (!editingProject || !canEdit()) return;
+    const its = state.items.filter((x) => x.proyecto === editingProject);
+    if (!btn.hasAttribute('data-armed')) {
+      arm(btn, its.length ? `Confirmar: eliminar con ${its.length} ${plural(its.length, 'pendiente', 'pendientes')}` : 'Confirmar: eliminar');
+      return;
+    }
+    btn.disabled = true;
+    const ok = await removeAll([{ col: 'projects', id: editingProject }, ...its.map((x) => ({ col: 'items', id: x.id }))]);
+    btn.disabled = false;
+    if (ok) { dlgProject.close(); toast('Proyecto eliminado'); }
+  });
+
+  async function removeAll(refs) {
+    if (state.mode === 'local') {
+      for (const r of refs) delete mem[r.col][r.id];
+      persistLocal();
+      pullLocal();
+      return true;
+    }
+    for (const r of refs) {
+      const ok = await store.del(r.col, r.id);
+      if (!ok) return false;
+    }
+    return true;
+  }
+
+  function arm(btn, label) { btn.setAttribute('data-armed', ''); btn.textContent = label; }
+  function disarm(btn, label) { btn.removeAttribute('data-armed'); btn.textContent = label; btn.disabled = false; }
+
+  /* ---------- Ejemplos ---------- */
+  $('#btnDemoClear').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (!canEdit()) return;
+    if (!btn.hasAttribute('data-armed')) { arm(btn, 'Confirmar: borrar ejemplos'); $('#btnDemoCancel').hidden = false; return; }
+    const exProjects = new Set(state.projects.filter((p) => p.ejemplo === true).map((p) => p.id));
+    const refs = [
+      ...state.items.filter((i) => i.ejemplo === true || exProjects.has(i.proyecto)).map((i) => ({ col: 'items', id: i.id })),
+      ...[...exProjects].map((id) => ({ col: 'projects', id })),
+    ];
+    btn.disabled = true;
+    toast('Borrando ejemplos…');
+    const ok = await removeAll(refs);
+    disarm(btn, 'Borrar ejemplos');
+    $('#btnDemoCancel').hidden = true;
+    if (ok) { state.filter = 'all'; saveUi(); toast('Ejemplos borrados. Registra tu primer proyecto.'); }
+  });
+  $('#btnDemoCancel').addEventListener('click', () => { disarm($('#btnDemoClear'), 'Borrar ejemplos'); $('#btnDemoCancel').hidden = true; });
+
+  /* ---------- Eventos ---------- */
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    const done = t.closest('[data-done]');
+    if (done) { markDone(done.getAttribute('data-done')); return; }
+    const more = t.closest('.more');
+    if (more && more.dataset.panel) {
+      const k = more.dataset.panel;
+      if (state.expanded.has(k)) state.expanded.delete(k); else state.expanded.add(k);
+      render();
+      return;
+    }
+    const chip = t.closest('[data-filter]');
+    if (chip) { state.filter = chip.getAttribute('data-filter'); saveUi(); render(); return; }
+    const item = t.closest('[data-item]');
+    if (item) { openItem(item.getAttribute('data-item')); return; }
+    if (t.closest('[data-close]')) { const d = t.closest('dialog'); if (d) d.close(); return; }
+    if (t instanceof HTMLDialogElement && t.open) t.close();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target instanceof Element && e.target.matches('tr[data-item]')) openItem(e.target.getAttribute('data-item'));
+  });
+  $('#btnNewItem').addEventListener('click', () => openItem(null));
+  $('#btnNewProject').addEventListener('click', () => openProject(null));
+  $('#closedToggle').addEventListener('click', () => { state.showClosed = !state.showClosed; render(); });
+  $('#tLens').addEventListener('change', (e) => { state.table.lens = e.target.value; saveUi(); render(); });
+  $('#tParty').addEventListener('change', (e) => { state.table.party = e.target.value; saveUi(); render(); });
+  $('#tSort').addEventListener('change', (e) => { state.table.sort = e.target.value; saveUi(); render(); });
+  $('#tQ').addEventListener('input', (e) => { state.table.q = e.target.value; scheduleRender(); });
+
+  /* ---------- Tooltip ---------- */
+  const tipEl = $('#tip');
+  function showTip(el) {
+    const text = el.getAttribute('data-tip');
+    if (!text) return;
+    const [first, ...rest] = text.split('\n');
+    tipEl.replaceChildren(...[h('strong', null, first), rest.length ? h('span', null, rest.join('\n')) : null].filter(Boolean));
+    tipEl.hidden = false;
+    const r = el.getBoundingClientRect();
+    const tr = tipEl.getBoundingClientRect();
+    let left = r.left + r.width / 2 - tr.width / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+    let top = r.top - tr.height - 8;
+    if (top < 8) top = r.bottom + 8;
+    tipEl.style.left = `${left}px`;
+    tipEl.style.top = `${top}px`;
+  }
+  function hideTip() { tipEl.hidden = true; }
+  document.addEventListener('pointerover', (e) => { const el = e.target instanceof Element && e.target.closest('[data-tip]'); if (el) showTip(el); });
+  document.addEventListener('pointerout', (e) => {
+    const el = e.target instanceof Element && e.target.closest('[data-tip]');
+    if (el && !(e.relatedTarget instanceof Node && el.contains(e.relatedTarget))) hideTip();
+  });
+  document.addEventListener('focusin', (e) => { const el = e.target instanceof Element && e.target.closest('[data-tip]'); if (el) showTip(el); else hideTip(); });
+  document.addEventListener('focusout', hideTip);
+  window.addEventListener('scroll', hideTip, { passive: true });
+
+  /* ---------- Aviso ---------- */
+  let toastTimer = 0;
+  function toast(msg, action) {
+    const el = $('#toast');
+    el.replaceChildren(...[h('span', null, msg),
+      action ? h('button', { type: 'button', class: 'toast-btn', onclick: () => { el.hidden = true; action.fn(); } }, action.label) : null,
+    ].filter(Boolean));
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, action ? 6500 : 3200);
+  }
+
+  /* ---------- Preferencias locales (solo comodidad) ---------- */
+  function loadUi() {
+    try {
+      const u = JSON.parse(localStorage.getItem(LS_UI) || '{}');
+      if (u && typeof u.filter === 'string') state.filter = u.filter;
+      if (u && u.table) {
+        if (LENSES.includes(u.table.lens)) state.table.lens = u.table.lens;
+        if (u.table.party === 'all' || PARTY[u.table.party]) state.table.party = u.table.party;
+        if (SORTS.includes(u.table.sort)) state.table.sort = u.table.sort;
+      }
+    } catch { /* sin almacenamiento: se usan valores por defecto */ }
+    $('#tLens').value = state.table.lens;
+    $('#tParty').value = state.table.party;
+    $('#tSort').value = state.table.sort;
+  }
+  function saveUi() {
+    try {
+      localStorage.setItem(LS_UI, JSON.stringify({ filter: state.filter, table: { lens: state.table.lens, party: state.table.party, sort: state.table.sort } }));
+    } catch { /* sin almacenamiento */ }
+  }
+
+  /* ---------- Modo local (archivo abierto fuera de Claude) ---------- */
+  function startLocal() {
+    state.mode = 'local';
+    mem = { projects: {}, items: {} };
+    try {
+      const raw = localStorage.getItem(LS_DATA);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d && typeof d.projects === 'object' && d.projects) mem.projects = d.projects;
+        if (d && typeof d.items === 'object' && d.items) mem.items = d.items;
+      }
+      localStorage.setItem(`${LS_DATA}:probe`, '1');
+      localStorage.removeItem(`${LS_DATA}:probe`);
+    } catch { state.persist = false; }
+    pullLocal();
+  }
+  function pullLocal() {
+    state.projects = Object.entries(mem.projects).map(([id, v]) => ({ ...v, id }));
+    state.items = Object.entries(mem.items).map(([id, v]) => ({ ...v, id }));
+    state.gotP = true;
+    state.gotI = true;
+    scheduleRender();
+  }
+  function persistLocal() {
+    if (!state.persist) return;
+    try { localStorage.setItem(LS_DATA, JSON.stringify(mem)); }
+    catch { state.persist = false; toast('Este navegador no dejó guardar los cambios.'); }
+  }
+
+  /* ---------- Modo compartido (base de datos del artifact) ---------- */
+  function subscribe() {
+    const onErr = (e) => {
+      while (subs.length) subs.pop()();
+      if (e && e.code === 'unavailable' && !state.resubscribed) { state.resubscribed = true; setTimeout(subscribe, 1200); return; }
+      toast('Se perdió la conexión con los datos. Recarga la página.');
+    };
+    subs.push(db.collection('projects').onSnapshot((snap) => {
+      state.projects = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      state.gotP = true;
+      scheduleRender();
+    }, onErr));
+    subs.push(db.collection('items').onSnapshot((snap) => {
+      state.items = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      state.gotI = true;
+      scheduleRender();
+    }, onErr));
+  }
+
+  async function init() {
+    loadUi();
+    render();
+    const claude = window.claude;
+    if (!claude || typeof claude.use !== 'function') { startLocal(); return; }
+    let user = null;
+    try { [db, user] = await Promise.all([claude.use('db'), claude.use('user')]); }
+    catch { db = null; }
+    if (!db) { state.mode = 'nodb'; render(); return; }
+    state.mode = 'db';
+    if (user) {
+      try { state.canWrite = await user.can('data.write'); } catch { state.canWrite = null; }
+      if (state.canWrite === false) state.readOnly = true;
+    }
+    render();
+    subscribe();
+  }
+  init();
+})();
+</script>
+<!-- page:end -->
+</body>
+</html>
