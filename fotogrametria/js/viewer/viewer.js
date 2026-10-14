@@ -286,7 +286,10 @@ export class Viewer3D {
   setCAD(geometry, { visible = true, opacity = 0.25 } = {}) {
     disposeGroup(this.groups.cad);
     if (!geometry) return;
-    const m = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0x60a5fa, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false, metalness: 0.1, roughness: 0.6 }));
+    // gris neutro (el azul de la escala de desviación significa «falta material») y desplazado en
+    // profundidad: donde la medición coincide con el CAD se ve la medición; el CAD sólo asoma donde falta
+    const m = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xb8c0ca, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false, metalness: 0.1, roughness: 0.6,
+      polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 }));
     m.visible = visible;
     this.cadMesh = m;
     this.groups.cad.add(m);
