@@ -15,9 +15,9 @@ const checks = [
   ['reproyección RMS < 1 px', r.calib.rms < 1],
   ['puntos de control RMS 3D < 0.3 mm', r.calib.check.rms3d < 0.3],
   ['ruido sobre la mesa σ < 0.1 mm', r.recon.table && r.recon.table.sigma < 0.1],
-  ['≥ 95 % de la malla a < 1 mm de la pieza real', r.acc.within1 >= 0.95],
+  ['≥ 98 % de la malla a < 1 mm de la pieza real', r.acc.within1 >= 0.98],
   ['mediana del error < 0.2 mm', r.acc.med < 0.2],
-  ['completitud ≥ 60 % (tolerancia 1 mm)', r.completeness >= 0.6],
+  ['completitud ≥ 85 % (tolerancia 1 mm)', r.completeness >= 0.85],
   ['barrenos de la base: centro < 1 mm, Ø ± 1.5 mm', r.holes.every(o => o && o.pos < 1 && Math.abs(o.dErr) < 1.5)],
   ['ranura de la base medida a media pared: centro < 1 mm, largo y ancho ± 1.5 mm', !!r.slot && r.slot.measured && r.slot.pos < 1 && Math.abs(r.slot.lenErr) < 1.5 && Math.abs(r.slot.widErr) < 1.5],
 ];

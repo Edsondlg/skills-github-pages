@@ -69,7 +69,8 @@ Pruebas automáticas con fotos renderizadas de la pieza demo (cámara con distor
 | Esquinas de marcadores (render CPU, vistas oblicuas) | 0.01–0.04 px RMS |
 | Focal / punto principal (14 vistas) | 0.007 % / < 0.1 px |
 | Puntos de control 3D (render CPU) | 0.0025 mm RMS |
-| Flujo completo en navegador (12 fotos de 1600×1200, calidad de prueba 640 px) | control 3D 0.11 mm RMS; ruido de mesa σ 0.024 mm; **99.7 % de la malla a < 1 mm** y 96.4 % a < 0.5 mm de la pieza real (mediana 0.03 mm) |
+| Flujo completo en navegador (12 fotos de 1600×1200, calidad de prueba 640 px) | control 3D 0.11 mm RMS; ruido de mesa σ 0.024 mm; **99.5 % de la malla a < 1 mm** y 96.3 % a < 0.5 mm de la pieza real (mediana 0.03 mm); 92 % de la superficie visible reconstruida |
+| Barrenos y ranura de la base (misma corrida) | centros a ≤ 0.25 mm; Ø 9.29 y 9.08 mm para Ø 10 reales (dentro de su incertidumbre de ±1.35 mm a esta resolución); ranura 29.4 × 9.1 mm para 30 × 9 |
 
 Con fotos reales la precisión depende sobre todo de la textura de la pieza, la planitud del tapete,
 la nitidez y la geometría de la toma; el reporte lo indica en cada caso.
@@ -101,8 +102,8 @@ fotogrametria/
 ```bash
 cd fotogrametria
 npm test                 # unitarias: detector, calibración, TSDF, ICP, patrones, métricas (≈ 1 min)
-npm run test:e2e         # exactitud del flujo completo vs. geometría real (Chromium headless, ≈ 12 min)
-npm run test:ui          # interfaz completa con la demo: medición, CAD y textura (≈ 15 min)
+npm run test:e2e         # exactitud del flujo completo, barrenos y ranura vs. geometría real (Chromium headless, ≈ 15 min)
+npm run test:ui          # interfaz completa con la demo: medición, barrenos, CAD y textura (≈ 15 min)
 ```
 
 ## Limitaciones conocidas
