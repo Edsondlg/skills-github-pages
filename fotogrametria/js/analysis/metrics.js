@@ -86,7 +86,9 @@ export function computeMetrics({ project, recon = null, cad = null, target = 1.0
     }
     const st = recon.meshStats;
     if (st) {
-      add('Pieza', 'dim', 'Dimensiones (caja envolvente X × Y × Z)', `${st.bbox.size[0].toFixed(2)} × ${st.bbox.size[1].toFixed(2)} × ${st.bbox.size[2].toFixed(2)}`, 'mm');
+      const fp = st.footprint;
+      if (fp) add('Pieza', 'dim', 'Dimensiones (largo × ancho × alto)', `${fp.length.toFixed(2)} × ${fp.width.toFixed(2)} × ${st.bbox.max[2].toFixed(2)}`, 'mm', null, `Huella orientada (giro ${fp.angle.toFixed(1)}°) · caja en ejes del tapete ${st.bbox.size[0].toFixed(2)} × ${st.bbox.size[1].toFixed(2)} mm`);
+      else add('Pieza', 'dim', 'Dimensiones (caja envolvente X × Y × Z)', `${st.bbox.size[0].toFixed(2)} × ${st.bbox.size[1].toFixed(2)} × ${st.bbox.max[2].toFixed(2)}`, 'mm');
       add('Pieza', 'area', 'Área de superficie reconstruida', st.area / 100, 'cm²');
       add('Pieza', 'tri', 'Malla', `${st.vertices.toLocaleString('es-MX')} vért. · ${st.triangles.toLocaleString('es-MX')} triáng.`, '');
       const dens = st.vertices / Math.max(1e-6, st.area / 100);

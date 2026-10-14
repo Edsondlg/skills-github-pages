@@ -157,7 +157,47 @@ export function meshStats(positions, indices) {
   }
   const border = boundaryVertices(positions.length / 3, indices);
   let nb = 0; for (const b of border) nb += b;
-  return { vertices: positions.length / 3, triangles: indices.length / 3, area, volume: Math.abs(vol), closed: nb === 0, borderVertices: nb, bbox: { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] } };
+  return { vertices: positions.length / 3, triangles: indices.length / 3, area, volume: Math.abs(vol), closed: nb === 0, borderVertices: nb,
+    bbox: { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] }, footprint: footprint2D(positions) };
+}
+
+// Huella sobre la mesa: rectángulo de área mínima que contiene la proyección XY (casco convexo +
+// calibres rotatorios). Da largo y ancho de la pieza aunque esté girada sobre el tapete.
+export function footprint2D(positions) {
+  const n = positions.length / 3;
+  if (n < 3) return null;
+  const idx = Array.from({ length: n }, (_, i) => i).sort((a, b) => positions[3 * a] - positions[3 * b] || positions[3 * a + 1] - positions[3 * b + 1]);
+  const X = (i) => positions[3 * i], Y = (i) => positions[3 * i + 1];
+  const cross = (o, a, b) => (X(a) - X(o)) * (Y(b) - Y(o)) - (Y(a) - Y(o)) * (X(b) - X(o));
+  const lower = [], upper = [];
+  for (const i of idx) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], i) <= 0) lower.pop(); lower.push(i); }
+  for (let k = idx.length - 1; k >= 0; k--) { const i = idx[k]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], i) <= 0) upper.pop(); upper.push(i); }
+  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+  if (hull.length < 3) return null;
+  let best = null;
+  for (let e = 0; e < hull.length; e++) {
+    const a = hull[e], b = hull[(e + 1) % hull.length];
+    const L = Math.hypot(X(b) - X(a), Y(b) - Y(a));
+    if (L < 1e-9) continue;
+    const ux = (X(b) - X(a)) / L, uy = (Y(b) - Y(a)) / L;
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const i of hull) {
+      const pu = X(i) * ux + Y(i) * uy, pv = -X(i) * uy + Y(i) * ux;
+      u0 = Math.min(u0, pu); u1 = Math.max(u1, pu); v0 = Math.min(v0, pv); v1 = Math.max(v1, pv);
+    }
+    const area = (u1 - u0) * (v1 - v0);
+    if (!best || area < best.area) best = { area, ux, uy, u0, u1, v0, v1 };
+  }
+  if (!best) return null;
+  const { ux, uy, u0, u1, v0, v1 } = best;
+  const du = u1 - u0, dv = v1 - v0;
+  // eje largo y su ángulo respecto a X, en (-90°, 90°]
+  let [ax, ay] = du >= dv ? [ux, uy] : [-uy, ux];
+  if (ax < 0 || (ax === 0 && ay < 0)) { ax = -ax; ay = -ay; }
+  let angle = Math.atan2(ay, ax) * 180 / Math.PI;
+  if (angle <= -90) angle += 180;
+  const um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
+  return { length: Math.max(du, dv), width: Math.min(du, dv), angle, center: [um * ux - vm * uy, um * uy + vm * ux] };
 }
 
 // Área proyectada sobre el plano XY (huella sobre la mesa) por rasterizado de triángulos.
@@ -190,7 +230,7 @@ export function projectedArea(positions, indices, cell = 0.25) {
 export function fillSmallHoles(mesh, { maxWidth = 2.5, maxPerimeter = 7, maxLength = 60 } = {}) {
   const P = mesh.positions, I = mesh.indices;
   const nV = P.length / 3;
-  const loops = boundaryLoops(nV, I);
+  const loops = boundaryLoops(nV, I, { minLength: 3 });
   if (loops.length < 2) return { mesh, filled: 0 };
   const per = loops.map(l => { let s = 0; for (let i = 0; i < l.length; i++) { const a = l[i], b = l[(i + 1) % l.length]; s += Math.hypot(P[3 * a] - P[3 * b], P[3 * a + 1] - P[3 * b + 1], P[3 * a + 2] - P[3 * b + 2]); } return s; });
   const maxPer = Math.max(...per);

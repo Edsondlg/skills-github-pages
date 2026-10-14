@@ -4,7 +4,8 @@ import { eigSym } from '../core/linalg.js';
 
 // Lazos de borde (aristas usadas por un solo triángulo), como listas de índices de vértice.
 // Se recorren aristas (no vértices): un vértice compartido por dos lazos («moño») no corta el contorno.
-export function boundaryLoops(nV, indices) {
+// minLength: lazos más cortos se ignoran (para medir barrenos hacen falta varios puntos).
+export function boundaryLoops(nV, indices, { minLength = 8 } = {}) {
   const edgeCount = new Map();
   const key = (a, b) => a < b ? a * 4294967296 + b : b * 4294967296 + a;
   for (let f = 0; f < indices.length; f += 3) {
@@ -39,7 +40,7 @@ export function boundaryLoops(nV, indices) {
       if (nxt === undefined) break;
       e = nxt;
     }
-    if (closed && loop.length >= 8) loops.push(loop);
+    if (closed && loop.length >= minLength) loops.push(loop);
   }
   return loops;
 }
@@ -151,7 +152,8 @@ export function detectHoles(positions, indices, { minR = 1.0, maxR = 60, circTol
         normal: used ? sec.normal : nrm, section: used ? sec.hs : null });
     }
   });
-  out.sort((a, b) => (a.type === b.type ? (b.diameter || b.size[0]) - (a.diameter || a.size[0]) : a.type === 'circular' ? -1 : 1));
+  const rank = (o) => o.type === 'circular' ? 0 : o.section !== null ? 1 : 2;
+  out.sort((a, b) => rank(a) - rank(b) || (b.diameter || b.size[0]) - (a.diameter || a.size[0]));
   return out;
 }
 

@@ -88,16 +88,24 @@ export function renderViewer(app) {
         [['top', 'Superior'], ['front', 'Frontal'], ['right', 'Derecha'], ['left', 'Izquierda'], ['back', 'Posterior'], ['iso', 'Isométrica']].map(([k, l]) => h('button', { class: 'btn small', onclick: () => v.view(k) }, l)),
         h('button', { class: 'btn small', onclick: () => v.fit() }, 'Ajustar'))),
       st ? card('Dimensiones de la pieza', kvTable([
-        ['Largo X', `${fmt(st.bbox.size[0], 2)} mm`], ['Ancho Y', `${fmt(st.bbox.size[1], 2)} mm`], ['Alto Z (sobre la mesa)', `${fmt(st.bbox.max[2], 2)} mm`],
+        st.footprint ? ['Largo × ancho (huella orientada)', `${fmt(st.footprint.length, 2)} × ${fmt(st.footprint.width, 2)} mm`] : null,
+        st.footprint ? ['Giro sobre el tapete', `${fmt(st.footprint.angle, 1)}°`] : null,
+        ['Alto Z (sobre la mesa)', `${fmt(st.bbox.max[2], 2)} mm`],
+        ['Caja en ejes del tapete X × Y', `${fmt(st.bbox.size[0], 2)} × ${fmt(st.bbox.size[1], 2)} mm`],
         ['Área de superficie', `${fmt(st.area / 100, 2)} cm²`], st.closed ? ['Volumen', `${fmt(st.volume / 1000, 3)} cm³`] : null,
         ['Malla', `${st.vertices.toLocaleString('es-MX')} vért. · ${st.triangles.toLocaleString('es-MX')} triáng.`],
       ])) : null,
       card('Barrenos y aberturas',
-        app.state.holes ? (app.state.holes.length ? h('div', { style: { maxHeight: '200px', overflow: 'auto' } }, h('table', { class: 'grid' },
+        app.state.holes ? (app.state.holes.length ? h('div', { style: { maxHeight: '220px', overflow: 'auto' } }, h('table', { class: 'grid' },
           h('thead', {}, h('tr', {}, ['#', 'Tipo', 'Ø / tamaño (mm)', 'Centro X, Y, Z (mm)'].map(t => h('th', {}, t)))),
-          h('tbody', {}, app.state.holes.map((o, i) => h('tr', {}, h('td', {}, String(i + 1)), h('td', {}, o.type === 'circular' ? 'Barreno' : o.section !== null ? 'Abertura' : 'Abertura o hueco'),
+          h('tbody', {}, app.state.holes.map((o, i) => (o.type === 'circular' || o.section !== null || app.state.showGaps) ? h('tr', {}, h('td', {}, String(i + 1)), h('td', {}, o.type === 'circular' ? 'Barreno' : o.section !== null ? 'Abertura' : 'Abertura o hueco'),
             h('td', {}, o.type === 'circular' ? `Ø ${fmt(o.diameter, 2)} ±${fmt(o.u95, 2)}` : `${fmt(o.size[0], 1)} × ${fmt(o.size[1], 1)}`),
-            h('td', { class: 'mono' }, o.center.map(x => fmt(x, 1)).join(', '))))))) : h('p', { class: 'hint' }, 'No se encontraron bordes cerrados interiores.')) : h('p', { class: 'hint' }, 'Busca bordes cerrados en la malla y ajusta círculos para estimar diámetros y posiciones de barrenos.'),
+            h('td', { class: 'mono' }, o.center.map(x => fmt(x, 1)).join(', '))) : null)))) : h('p', { class: 'hint' }, 'No se encontraron bordes cerrados interiores.')) : h('p', { class: 'hint' }, 'Busca bordes cerrados en la malla y ajusta círculos para estimar diámetros y posiciones de barrenos.'),
+        (() => {
+          const gaps = (app.state.holes || []).filter(o => o.type !== 'circular' && o.section === null).length;
+          return gaps ? h('div', { class: 'row', style: { justifyContent: 'space-between' } }, h('span', { class: 'hint' }, `${gaps} abertura(s) o hueco(s) sin pared medible (posibles zonas sin cobertura de fotos)`),
+            h('button', { class: 'btn small ghost', onclick: () => { app.state.showGaps = !app.state.showGaps; app.refresh(); } }, app.state.showGaps ? 'Ocultar' : 'Mostrar')) : null;
+        })(),
         h('div', { class: 'row' },
           h('button', { class: 'btn small', onclick: () => {
             const m = app.state.recon.mesh, vox = rec.voxel || 0.5;

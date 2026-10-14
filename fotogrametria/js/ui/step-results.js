@@ -45,7 +45,7 @@ export function dashboard(app, M) {
       h('div', { class: 'sub' }, `Promedio ponderado de ${Object.keys(M.scores).length} indicadores, limitado por los de exactitud (control 3D, ruido y reproyección)`)))));
   d.append(h('div', { class: 'tile w3' }, h('h3', {}, 'Incertidumbre (95 %)'), h('div', { class: 'big' }, M.uncertainty95 !== undefined ? `±${fmt(M.uncertainty95, 2)}` : '—', h('small', {}, ' mm')), h('div', { class: 'sub' }, `Objetivo ±${fmt(M.target, 2)} mm · ${M.meetsTarget === undefined ? 'pendiente' : M.meetsTarget ? 'CUMPLE' : 'NO CUMPLE'}`)));
   const st = rec && rec.meshStats;
-  d.append(h('div', { class: 'tile w3' }, h('h3', {}, 'Pieza (X × Y × Z)'), h('div', { class: 'big', style: { fontSize: '22px' } }, st ? `${fmt(st.bbox.size[0], 1)} × ${fmt(st.bbox.size[1], 1)} × ${fmt(st.bbox.max[2], 1)}` : '—', h('small', {}, ' mm')), h('div', { class: 'sub' }, st ? `Área ${fmt(st.area / 100, 1)} cm² · ${st.triangles.toLocaleString('es-MX')} triángulos` : 'Sin reconstrucción')));
+  d.append(h('div', { class: 'tile w3' }, h('h3', {}, 'Pieza (largo × ancho × alto)'), h('div', { class: 'big', style: { fontSize: '22px' } }, st ? `${fmt(st.footprint ? st.footprint.length : st.bbox.size[0], 1)} × ${fmt(st.footprint ? st.footprint.width : st.bbox.size[1], 1)} × ${fmt(st.bbox.max[2], 1)}` : '—', h('small', {}, ' mm')), h('div', { class: 'sub' }, st ? `Área ${fmt(st.area / 100, 1)} cm² · ${st.triangles.toLocaleString('es-MX')} triángulos` : 'Sin reconstrucción')));
   // barras de efectividad
   const scored = M.items.filter(it => it.score !== null && it.score !== undefined);
   d.append(h('div', { class: 'tile w6' }, h('h3', {}, 'Porcentajes de efectividad por indicador'), h('div', { class: 'bars' }, scored.map(it => h('div', { class: 'barrow', title: it.note || '' },
@@ -123,7 +123,7 @@ table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ddd;pad
 <h2>Resumen</h2>
 <div class="kpi">Índice global<b class="${M.verdictClass || ''}">${M.index !== null ? Math.round(100 * M.index) + ' %' : '—'}</b>${esc(M.verdict || '')}</div>
 <div class="kpi">Incertidumbre 95 %<b>${M.uncertainty95 !== undefined ? '±' + M.uncertainty95.toFixed(2) + ' mm' : '—'}</b>objetivo ±${M.target} mm</div>
-${rec && rec.meshStats ? `<div class="kpi">Dimensiones X×Y×Z<b>${rec.meshStats.bbox.size[0].toFixed(2)} × ${rec.meshStats.bbox.size[1].toFixed(2)} × ${rec.meshStats.bbox.max[2].toFixed(2)} mm</b>área ${(rec.meshStats.area / 100).toFixed(1)} cm²</div>` : ''}
+${rec && rec.meshStats ? `<div class="kpi">Largo × ancho × alto<b>${(rec.meshStats.footprint ? rec.meshStats.footprint.length : rec.meshStats.bbox.size[0]).toFixed(2)} × ${(rec.meshStats.footprint ? rec.meshStats.footprint.width : rec.meshStats.bbox.size[1]).toFixed(2)} × ${rec.meshStats.bbox.max[2].toFixed(2)} mm</b>área ${(rec.meshStats.area / 100).toFixed(1)} cm²</div>` : ''}
 ${cal ? `<div class="kpi">Fotos registradas<b>${cal.registered}/${cal.total}</b>RMS ${cal.rms.toFixed(3)} px</div>` : ''}
 <p>${esc(M.summary || '')}</p>
 ${shot ? `<h2>Vista 3D</h2><img src="${shot}" alt="Vista 3D de la pieza">` : ''}
