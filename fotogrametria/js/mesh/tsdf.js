@@ -5,6 +5,50 @@ const B = 8, B3 = 512;
 const OFF = 1 << 15;
 function bkey(bx, by, bz) { return (bx + OFF) + (by + OFF) * 65536 + (bz + OFF) * 4294967296; }
 
+// Franja de primer plano junto a bordes de oclusión: semillas = píxeles cuyo vecino inmediato queda
+// detrás de su plano (normal + profundidad) más de delta mm; la franja son los píxeles a <= r px de
+// una semilla que están sobre el plano de ésta o delante de él.
+export function occludingBand({ W, H, K, depth, normal, cost }, costThr, r, delta) {
+  const good = (i) => depth[i] > 0 && cost[i] <= costThr;
+  // profundidad que predice el plano del píxel i en (x, y); NaN si el rayo es rasante
+  const pred = (i, x, y) => {
+    const xi = i % W, yi = (i / W) | 0, d = depth[i];
+    const nx = normal[3 * i], ny = normal[3 * i + 1], nz = normal[3 * i + 2];
+    const rho = nx * (xi - K.cx) / K.fx * d + ny * (yi - K.cy) / K.fy * d + nz * d;
+    const rx = (x - K.cx) / K.fx, ry = (y - K.cy) / K.fy;
+    const den = nx * rx + ny * ry + nz;
+    return Math.abs(den) < 0.1 * Math.hypot(rx, ry, 1) ? NaN : rho / den;
+  };
+  const seeds = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!good(i)) continue;
+      for (let q = 0; q < 4; q++) {
+        const nx = x + (q === 0 ? 1 : q === 1 ? -1 : 0), ny = y + (q === 2 ? 1 : q === 3 ? -1 : 0);
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const j = ny * W + nx;
+        if (!good(j)) continue;
+        const zp = pred(i, nx, ny);
+        if (depth[j] > (zp === zp ? zp : depth[i]) + delta) { seeds.push(i); break; }
+      }
+    }
+  }
+  const band = new Uint8Array(W * H);
+  for (const s of seeds) {
+    const sx = s % W, sy = (s / W) | 0;
+    for (let y = Math.max(0, sy - r); y <= Math.min(H - 1, sy + r); y++) {
+      for (let x = Math.max(0, sx - r); x <= Math.min(W - 1, sx + r); x++) {
+        const p = y * W + x;
+        if (band[p] || !(depth[p] > 0)) continue;
+        const zp = pred(s, x, y);
+        if (depth[p] <= (zp === zp ? zp : depth[s]) + delta) band[p] = 1;
+      }
+    }
+  }
+  return band;
+}
+
 export class SparseTSDF {
   constructor({ voxel = 0.3, trunc = 3, truncBack = 3, region = null, zCut = -Infinity } = {}) {
     this.v = voxel;
@@ -51,7 +95,10 @@ export class SparseTSDF {
   }
 
   // Integra un mapa de profundidad. dm: { W, H, K:{fx,fy,cx,cy}, R, t, depth, normal, cost, color? }
-  integrate(dm, { costThr = 0.35, maxAngle = 80, minRegion = 60, discont = 0.012, sub = 1 } = {}) {
+  // edgeR/edgeW/edgeJump: la correlación por ventanas «engorda» el primer plano sobre el fondo en
+  // los bordes de oclusión grandes (p. ej. una pestaña contra la mesa) hasta el radio de la ventana;
+  // esa franja pesa edgeW y las vistas que ven el mismo borde sin oclusión deciden su posición.
+  integrate(dm, { costThr = 0.35, maxAngle = 80, minRegion = 60, discont = 0.012, sub = 1, edgeR = 6, edgeW = 0.15, edgeJump = 10 } = {}) {
     const { W, H, K, R, t, depth, normal, cost, color } = dm;
     const n = W * H;
     const valid = new Uint8Array(n);
@@ -100,6 +147,7 @@ export class SparseTSDF {
       if (size < minRegion) for (const i of members) valid[i] = 0; else kept += size;
     }
     if (!kept) return { nValid: 0 };
+    const edgeFg = edgeR > 0 && edgeW < 1 ? occludingBand(dm, costThr, edgeR, edgeJump) : null;
     // asignación de bloques alrededor de los puntos observados
     const bs = B * this.v, iv = 1 / bs;
     for (let i = 0; i < n; i += sub) {
@@ -144,7 +192,7 @@ export class SparseTSDF {
             const c = cost[pi];
             const rx = (u - K.cx) / K.fx, ry = (vv - K.cy) / K.fy;
             const cosA = -(normal[3 * pi] * rx + normal[3 * pi + 1] * ry + normal[3 * pi + 2]) / Math.hypot(rx, ry, 1);
-            const w = Math.max(0.05, 1 - c / costThr) * Math.max(0.1, cosA);
+            const w = Math.max(0.05, 1 - c / costThr) * Math.max(0.1, cosA) * (edgeFg && edgeFg[pi] ? edgeW : 1);
             const id = base + (k * B + j) * B + i;
             const Wo = this.W[id];
             this.F[id] = (this.F[id] * Wo + f * w) / (Wo + w);

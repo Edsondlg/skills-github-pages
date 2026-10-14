@@ -260,7 +260,7 @@ export { updateLegend };
 function setMeshData(app, m) {
   const rec = app.state.recon;
   rec.mesh = m;
-  rec.meshStats = m.indices.length ? meshStats(m.positions, m.indices) : null;
+  rec.meshStats = m.indices.length ? meshStats(m.positions, m.indices, { footprintZ: 0.75 * ((rec.params && rec.params.sheetThickness) || app.settings.recon.sheetThickness) }) : null;
   rec.texture = null;
   app.state.holes = null;
   if (app.holeGroup) disposeGroup(app.holeGroup);

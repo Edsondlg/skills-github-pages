@@ -20,8 +20,9 @@ const checks = [
   ['completitud ≥ 85 % (tolerancia 1 mm)', r.completeness >= 0.85],
   ['barrenos de la base: centro < 1 mm, Ø ± 1.5 mm', r.holes.every(o => o && o.pos < 1 && Math.abs(o.dErr) < 1.5)],
   ['ranura de la base medida a media pared: centro < 1 mm, largo y ancho ± 1.5 mm', !!r.slot && r.slot.measured && r.slot.pos < 1 && Math.abs(r.slot.lenErr) < 1.5 && Math.abs(r.slot.widErr) < 1.5],
+  ['largo × ancho de la pieza (huella orientada) ± 1 mm, giro ± 0.5°', !!r.footprint && Math.abs(r.footprint.lenErr) < 1 && Math.abs(r.footprint.widErr) < 1 && Math.abs(r.footprint.angErr) < 0.5],
 ];
 let ok = true;
 for (const [name, pass] of checks) { console.log(`${pass ? '✔' : '✖'} ${name}`); ok = ok && !!pass; }
-console.log(JSON.stringify({ calib: { rms: r.calib.rms, check: r.calib.check.rms3d }, acc: r.acc, completeness: r.completeness, table: r.recon.table, holes: r.holes, slot: r.slot }, null, 1));
+console.log(JSON.stringify({ calib: { rms: r.calib.rms, check: r.calib.check.rms3d }, acc: r.acc, completeness: r.completeness, table: r.recon.table, holes: r.holes, slot: r.slot, footprint: r.footprint }, null, 1));
 process.exit(ok ? 0 : 1);

@@ -70,6 +70,9 @@ const res = await page.evaluate(async (opts) => {
   const holeEval = F.holes.map(hh => { const b = nearest(holes.filter(o => o.type === 'circular'), toW(hh.x, hh.y)); return b ? { d: b.o.diameter, dErr: b.o.diameter - hh.d, pos: b.dist, u95: 2 * Math.hypot(b.o.fitRms, rec.voxel) } : null; });
   const sb = nearest(holes.filter(o => o.type === 'abertura'), toW(F.slot.x, F.slot.y));
   const slotEval = sb ? { size: sb.o.size, lenErr: sb.o.size[0] - F.slot.length, widErr: sb.o.size[1] - F.slot.width, pos: sb.dist, measured: sb.o.section !== null } : null;
+  // huella orientada (largo × ancho y giro) contra la pieza real
+  const fp = rec.meshStats.footprint, me = demo.partMatrix.elements;
+  const fpEval = fp ? { length: fp.length, width: fp.width, angle: fp.angle, lenErr: fp.length - synth.DEMO_PART.ancho, widErr: fp.width - synth.DEMO_PART.fondo, angErr: fp.angle - Math.atan2(me[1], me[0]) * 180 / Math.PI } : null;
   T.eval = performance.now() - t;
   // render de la malla reconstruida (colores de vértice y desviación) para inspección visual
   const THREE = window.THREE;
@@ -103,7 +106,7 @@ const res = await page.evaluate(async (opts) => {
     recon: { voxel: rec.voxel, gsd: rec.gsd, partBox: rec.partBox, tris: rec.meshStats && rec.meshStats.triangles, table: rec.tableStats, timings: rec.timings, perView: rec.perView.map(v => [v.index, +(v.validFrac || 0).toFixed(2), +(v.meanCost || 0).toFixed(3)]) },
     acc: { n: arr.length, mean: arr.reduce((s, v) => s + v, 0) / arr.length, med: q(0.5), p90: q(0.9), p95: q(0.95), p99: q(0.99), within05: arr.filter(v => v < 0.5).length / arr.length, within1: arr.filter(v => v < 1).length / arr.length },
     completeness: nC / Math.max(1, nS), nSamples: nS,
-    holes: holeEval, slot: slotEval,
+    holes: holeEval, slot: slotEval, footprint: fpEval,
   };
 }, opts);
 import fs from 'node:fs';

@@ -139,7 +139,9 @@ export function vertexNormals(positions, indices) {
   return n;
 }
 
-export function meshStats(positions, indices) {
+// footprintZ: altura mínima de los vértices para la huella (excluye el pie de las paredes, que la
+// fusión ensancha hacia el espacio libre junto a la mesa).
+export function meshStats(positions, indices, { footprintZ = -Infinity } = {}) {
   let area = 0, vol = 0;
   const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < positions.length; i += 3) {
@@ -158,15 +160,18 @@ export function meshStats(positions, indices) {
   const border = boundaryVertices(positions.length / 3, indices);
   let nb = 0; for (const b of border) nb += b;
   return { vertices: positions.length / 3, triangles: indices.length / 3, area, volume: Math.abs(vol), closed: nb === 0, borderVertices: nb,
-    bbox: { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] }, footprint: footprint2D(positions) };
+    bbox: { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] }, footprint: footprint2D(positions, footprintZ) };
 }
 
 // Huella sobre la mesa: rectángulo de área mínima que contiene la proyección XY (casco convexo +
 // calibres rotatorios). Da largo y ancho de la pieza aunque esté girada sobre el tapete.
-export function footprint2D(positions) {
+export function footprint2D(positions, zMin = -Infinity) {
   const n = positions.length / 3;
-  if (n < 3) return null;
-  const idx = Array.from({ length: n }, (_, i) => i).sort((a, b) => positions[3 * a] - positions[3 * b] || positions[3 * a + 1] - positions[3 * b + 1]);
+  let idx = [];
+  for (let i = 0; i < n; i++) if (positions[3 * i + 2] >= zMin) idx.push(i);
+  if (idx.length < 3) idx = Array.from({ length: n }, (_, i) => i);
+  if (idx.length < 3) return null;
+  idx.sort((a, b) => positions[3 * a] - positions[3 * b] || positions[3 * a + 1] - positions[3 * b + 1]);
   const X = (i) => positions[3 * i], Y = (i) => positions[3 * i + 1];
   const cross = (o, a, b) => (X(a) - X(o)) * (Y(b) - Y(o)) - (Y(a) - Y(o)) * (X(b) - X(o));
   const lower = [], upper = [];

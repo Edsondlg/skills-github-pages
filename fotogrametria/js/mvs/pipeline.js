@@ -244,7 +244,7 @@ export async function reconstruct({ views, K, board, params = {}, onProgress = (
     check();
     onProgress('malla', 0.2, 'Extrayendo la superficie…');
     const t2 = performance.now();
-    const mesh = await tsdf.call('mesh', { opts: { minViews: p.minViews, smooth: p.smooth } });
+    const mesh = await tsdf.call('mesh', { opts: { minViews: p.minViews, smooth: p.smooth, footprintZ: 0.75 * p.sheetThickness } });
     const tab = await tsdf.call('table');
     tsdf.terminate();
     timings.mesh = performance.now() - t2;

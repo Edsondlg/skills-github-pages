@@ -130,7 +130,7 @@ export function detectHoles(positions, indices, { minR = 1.0, maxR = 60, circTol
     // cobertura angular alrededor del centro (un arco abierto no es un barreno)
     const maxGap = fit ? angularGap(u, w, fit.cx, fit.cy) : 360;
     const isCirc = fit && fit.r >= minR && fit.r <= maxR && fit.rms <= Math.max(circTol * fit.r, 0.25) && maxGap < 60 && len2 > 1.2 * fit.r;
-    const isOpen = !isCirc && len2 > minWidth && len1 < 4 * maxR && planarity < 0.15 * len1;
+    const isOpen = len2 > minWidth && len1 < 4 * maxR && planarity < 0.15 * len1;
     if (!isCirc && !isOpen) return;
     const item = { loop: li, n, perimeter, normal: nrm, planarity, section: null };
     const sec = wallSection(positions, indices, c, nrm, e1, e2, u, w, thickness);
@@ -139,10 +139,13 @@ export function detectHoles(positions, indices, { minR = 1.0, maxR = 60, circTol
       const hole = { ...item, type: 'circular', center: toWorld(fit.cx, fit.cy, 0), diameter: 2 * fit.r, fitRms: fit.rms, fitMax: fit.max, edgeDiameter: 2 * fit.r, size: [2 * fit.r, 2 * fit.r] };
       const f2 = sec && sec.U.length >= 12 ? fitCircle2D(sec.U, sec.W) : null;
       if (f2 && f2.r > 0.5 * fit.r && f2.r < fit.r + 3 && angularGap(sec.U, sec.W, f2.cx, f2.cy) < 60 && f2.rms <= Math.max(0.1 * f2.r, 0.35)) {
-        Object.assign(hole, { center: toWorld(f2.cx, f2.cy, sec.h), diameter: 2 * f2.r, fitRms: f2.rms, fitMax: f2.max, size: [2 * f2.r, 2 * f2.r], normal: sec.normal, section: sec.hs });
+        out.push(Object.assign(hole, { center: toWorld(f2.cx, f2.cy, sec.h), diameter: 2 * f2.r, fitRms: f2.rms, fitMax: f2.max, size: [2 * f2.r, 2 * f2.r], normal: sec.normal, section: sec.hs }));
+        return;
       }
-      out.push(hole);
-    } else {
+      // sin pared que lo confirme, sólo un borde muy redondo cuenta como barreno (si no, es un hueco)
+      if (fit.rms <= Math.max(0.06 * fit.r, 0.15)) { out.push(hole); return; }
+    }
+    if (len2 > minWidth && len1 < 4 * maxR && planarity < 0.15 * len1) {
       const edge = extents2D(u, w);
       let ex = sec && sec.U.length >= 12 ? extents2D(sec.U, sec.W) : edge;
       // el corte debe rodear la abertura y quedar por fuera del pie, sin desbordarse

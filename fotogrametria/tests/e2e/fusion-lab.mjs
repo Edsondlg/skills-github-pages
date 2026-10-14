@@ -3,7 +3,7 @@
 // Uso: node tests/e2e/fusion-lab.mjs <dir> [voxel] [trunc] [truncBack] [minViews] [costThr]
 import fs from 'node:fs';
 import { SparseTSDF } from '../../js/mesh/tsdf.js';
-import { removeSmallComponents, taubinSmooth, meshStats, fillSmallHoles } from '../../js/mesh/process.js';
+import { removeSmallComponents, taubinSmooth, meshStats, fillSmallHoles, footprint2D } from '../../js/mesh/process.js';
 import { TriangleGrid, pointsToMesh, samplePoints } from '../../js/analysis/distance.js';
 
 const dir = process.argv[2];
@@ -47,7 +47,8 @@ for (let i = 0; i < S.points.length / 3; i++) {
 }
 console.log(JSON.stringify({ voxel, trunc, truncBack, minViews, costThr, smooth, filled, ms: Date.now() - t0, tris: st.triangles, area: Math.round(st.area),
   acc: { med: +q(0.5).toFixed(4), p90: +q(0.9).toFixed(4), p99: +q(0.99).toFixed(4), within05: +(d.filter(x => x < 0.5).length / d.length).toFixed(4), within1: +(d.filter(x => x < 1).length / d.length).toFixed(4) },
-  completeness: +(nC / nS).toFixed(4), byCat: Object.fromEntries(Object.entries(missing).map(([k, [a, b]]) => [k, `${(100 * b / Math.max(1, a)).toFixed(1)}% de ${a}`])) }));
+  completeness: +(nC / nS).toFixed(4), byCat: Object.fromEntries(Object.entries(missing).map(([k, [a, b]]) => [k, `${(100 * b / Math.max(1, a)).toFixed(1)}% de ${a}`])),
+  footprint: (({ length, width, angle }) => [+length.toFixed(2), +width.toFixed(2), +angle.toFixed(2)])(footprint2D(mesh.positions, 0.75 * +(process.env.THICK ?? 2))) }));
 if (process.env.SAVE) {
   // STL ASCII mínimo para inspección
   const lines = ['solid m'];

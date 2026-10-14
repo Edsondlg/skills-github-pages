@@ -27,7 +27,7 @@ self.onmessage = (e) => {
         mesh = r.mesh; filled = r.filled;
       }
       if (o.smooth > 0 && mesh.indices.length) taubinSmooth(mesh.positions, mesh.indices, { iterations: o.smooth });
-      const st = mesh.indices.length ? meshStats(mesh.positions, mesh.indices) : null;
+      const st = mesh.indices.length ? meshStats(mesh.positions, mesh.indices, { footprintZ: o.footprintZ }) : null;
       const colors = new Uint8Array(mesh.colors.length);
       for (let i = 0; i < colors.length; i++) colors[i] = Math.max(0, Math.min(255, Math.round(mesh.colors[i])));
       self.postMessage({ id, positions: mesh.positions, indices: mesh.indices, colors, conf: mesh.conf, stats: st, rawTriangles: raw, filled },
