@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960.0 620.0" width="960" height="620" font-family="Arial, sans-serif">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<defs>
+<mask id="m0" maskUnits="userSpaceOnUse">
+<rect x="40.00" y="410.00" width="420.00" height="30.00" fill="#fff"/>
+</mask>
+<mask id="m1" maskUnits="userSpaceOnUse">
+<rect x="40.00" y="60.00" width="420.00" height="30.00" fill="#fff"/>
+</mask>
+<mask id="m2" maskUnits="userSpaceOnUse">
+<rect x="40.00" y="60.00" width="420.00" height="380.00" fill="#fff"/>
+<circle cx="130.00" cy="115.00" r="16.00" fill="#000"/>
+<circle cx="375.00" cy="115.00" r="16.00" fill="#000"/>
+<circle cx="375.00" cy="385.00" r="16.00" fill="#000"/>
+<circle cx="125.00" cy="385.00" r="16.00" fill="#000"/>
+<rect x="39.00" y="334.00" width="40.00" height="22.00" fill="#000"/>
+<circle cx="79.00" cy="345.00" r="11.00" fill="#000"/>
+<rect x="39.00" y="144.00" width="40.00" height="22.00" fill="#000"/>
+<circle cx="79.00" cy="155.00" r="11.00" fill="#000"/>
+<rect x="421.00" y="334.00" width="40.00" height="22.00" fill="#000"/>
+<circle cx="421.00" cy="345.00" r="11.00" fill="#000"/>
+<rect x="421.00" y="144.00" width="40.00" height="22.00" fill="#000"/>
+<circle cx="421.00" cy="155.00" r="11.00" fill="#000"/>
+<circle cx="125.00" cy="325.00" r="5.50" fill="#000"/>
+<circle cx="375.00" cy="325.00" r="5.50" fill="#000"/>
+<circle cx="125.00" cy="175.00" r="5.50" fill="#000"/>
+<circle cx="375.00" cy="175.00" r="5.50" fill="#000"/>
+<circle cx="180.00" cy="175.00" r="5.00" fill="#000"/>
+<circle cx="320.00" cy="325.00" r="5.00" fill="#000"/>
+</mask>
+<mask id="m3" maskUnits="userSpaceOnUse">
+<rect x="100.00" y="150.00" width="300.00" height="200.00" fill="#fff"/>
+<circle cx="180.00" cy="175.00" r="5.00" fill="#000"/>
+<circle cx="320.00" cy="325.00" r="5.00" fill="#000"/>
+</mask>
+<mask id="m4" maskUnits="userSpaceOnUse">
+<circle cx="130.00" cy="115.00" r="16.00" fill="#fff"/>
+</mask>
+<mask id="m5" maskUnits="userSpaceOnUse">
+<circle cx="375.00" cy="115.00" r="16.00" fill="#fff"/>
+</mask>
+<mask id="m6" maskUnits="userSpaceOnUse">
+<circle cx="375.00" cy="385.00" r="16.00" fill="#fff"/>
+</mask>
+<mask id="m7" maskUnits="userSpaceOnUse">
+<circle cx="125.00" cy="385.00" r="16.00" fill="#fff"/>
+</mask>
+</defs>
+<text x="40.0" y="52.0" font-size="13" font-weight="bold" fill="#222">PLANTA - mitad inferior (bujes punteados)</text>
+<rect x="40.00" y="410.00" width="420.00" height="30.00" fill="#7d868f" fill-opacity="0.9" stroke="none" mask="url(#m0)"/>
+<rect x="40.00" y="410.00" width="420.00" height="30.00" fill="none" stroke="#333" stroke-width="0.8"/>
+<rect x="40.00" y="60.00" width="420.00" height="30.00" fill="#7d868f" fill-opacity="0.9" stroke="none" mask="url(#m1)"/>
+<rect x="40.00" y="60.00" width="420.00" height="30.00" fill="none" stroke="#333" stroke-width="0.8"/>
+<rect x="40.00" y="60.00" width="420.00" height="380.00" fill="#9aa3ad" fill-opacity="0.9" stroke="none" mask="url(#m2)"/>
+<rect x="40.00" y="60.00" width="420.00" height="380.00" fill="none" stroke="#333" stroke-width="0.8"/>
+<rect x="100.00" y="150.00" width="300.00" height="200.00" fill="#4f7cc4" fill-opacity="0.9" stroke="none" mask="url(#m3)"/>
+<rect x="100.00" y="150.00" width="300.00" height="200.00" fill="none" stroke="#333" stroke-width="0.8"/>
+<rect x="114.00" y="99.00" width="32.00" height="32.00" fill="#c0392b" fill-opacity="0.9" stroke="none" mask="url(#m4)"/>
+<circle cx="130.00" cy="115.00" r="16.00" fill="none" stroke="#333" stroke-width="0.8"/>
+<rect x="359.00" y="99.00" width="32.00" height="32.00" fill="#c0392b" fill-opacity="0.9" stroke="none" mask="url(#m5)"/>
+<circle cx="375.00" cy="115.00" r="16.00" fill="none" stroke="#333" stroke-width="0.8"/>
+<rect x="359.00" y="369.00" width="32.00" height="32.00" fill="#c0392b" fill-opacity="0.9" stroke="none" mask="url(#m6)"/>
+<circle cx="375.00" cy="385.00" r="16.00" fill="none" stroke="#333" stroke-width="0.8"/>
+<rect x="109.00" y="369.00" width="32.00" height="32.00" fill="#c0392b" fill-opacity="0.9" stroke="none" mask="url(#m7)"/>
+<circle cx="125.00" cy="385.00" r="16.00" fill="none" stroke="#333" stroke-width="0.8"/>
+<circle cx="130.00" cy="115.00" r="25.00" fill="none" stroke="#8a5a00" stroke-width="0.8" stroke-dasharray="4 3"/>
+<circle cx="375.00" cy="115.00" r="25.00" fill="none" stroke="#8a5a00" stroke-width="0.8" stroke-dasharray="4 3"/>
+<circle cx="375.00" cy="385.00" r="25.00" fill="none" stroke="#8a5a00" stroke-width="0.8" stroke-dasharray="4 3"/>
+<circle cx="125.00" cy="385.00" r="25.00" fill="none" stroke="#8a5a00" stroke-width="0.8" stroke-dasharray="4 3"/>
+<line x1="40.0" y1="458.0" x2="460.0" y2="458.0" stroke="#555" stroke-width="0.8"/><text x="250.0" y="471.0" font-size="11" text-anchor="middle" fill="#222">420 mm</text>
+<line x1="474.0" y1="60.0" x2="474.0" y2="440.0" stroke="#555" stroke-width="0.8"/><text x="480.0" y="250.0" font-size="11" fill="#222" transform="rotate(90 480.0 250.0)" text-anchor="middle">380 mm</text>
+<text x="40.0" y="484.0" font-size="11" font-weight="normal" fill="#222">X = avance de la tira  -&gt;</text>
+<text x="500.0" y="52.0" font-size="13" font-weight="bold" fill="#222">ALZADO FRONTAL - troquel cerrado</text>
+<rect x="500.00" y="238.90" width="420.00" height="81.10" fill="#7d868f" stroke="#333" stroke-width="0.6"/>
+<rect x="574.00" y="73.90" width="32.00" height="165.00" fill="#c0392b" stroke="#333" stroke-width="0.6"/>
+<rect x="819.00" y="73.90" width="32.00" height="165.00" fill="#c0392b" stroke="#333" stroke-width="0.6"/>
+<rect x="565.00" y="60.00" width="50.00" height="90.00" fill="#b07d2b" stroke="#333" stroke-width="0.6"/>
+<rect x="810.00" y="60.00" width="50.00" height="90.00" fill="#b07d2b" stroke="#333" stroke-width="0.6"/>
+<rect x="560.00" y="153.90" width="300.00" height="35.00" fill="#4f7cc4" stroke="#333" stroke-width="0.6"/>
+<rect x="560.00" y="134.00" width="300.00" height="18.00" fill="#5fae6b" stroke="#333" stroke-width="0.6"/>
+<rect x="560.00" y="110.00" width="300.00" height="22.00" fill="#d9a441" stroke="#333" stroke-width="0.6"/>
+<rect x="560.00" y="100.00" width="300.00" height="10.00" fill="#c48a4f" stroke="#333" stroke-width="0.6"/>
+<rect x="819.00" y="73.90" width="32.00" height="165.00" fill="#c0392b" stroke="#333" stroke-width="0.6"/>
+<rect x="569.00" y="73.90" width="32.00" height="165.00" fill="#c0392b" stroke="#333" stroke-width="0.6"/>
+<rect x="810.00" y="60.00" width="50.00" height="90.00" fill="#b07d2b" stroke="#333" stroke-width="0.6"/>
+<rect x="560.00" y="60.00" width="50.00" height="90.00" fill="#b07d2b" stroke="#333" stroke-width="0.6"/>
+<rect x="500.00" y="238.90" width="420.00" height="81.10" fill="#7d868f" stroke="#333" stroke-width="0.6"/>
+<rect x="500.00" y="188.90" width="420.00" height="50.00" fill="#9aa3ad" stroke="#333" stroke-width="0.6"/>
+<rect x="500.00" y="60.00" width="420.00" height="40.00" fill="#9aa3ad" stroke="#333" stroke-width="0.6"/>
+<line x1="934.0" y1="60.0" x2="934.0" y2="320.0" stroke="#555" stroke-width="0.8"/><text x="940.0" y="190.0" font-size="11" fill="#222" transform="rotate(90 940.0 190.0)" text-anchor="middle">Altura cerrada 260 mm</text>
+<text x="40.0" y="510.0" font-size="12" font-weight="normal" fill="#222">TROQUEL_EJEMPLO  |  Placa matriz 300 x 200 x 35 mm  |  Zapatas 420 x 380 mm (inferior 50 mm, superior 40 mm)</text>
+<text x="40.0" y="528.0" font-size="12" font-weight="normal" fill="#222">Guiado: 4 postes &#x27;cuatro&#x27; Ø32 con bujes de bolas  |  Lámina 1.9 mm  |  Carrera 50 mm</text>
+<text x="40.0" y="546.0" font-size="12" font-weight="normal" fill="#222">Verificaciones: 0 errores, 0 avisos</text>
+<rect x="40.0" y="571.0" width="10" height="10" fill="#9aa3ad" stroke="#333" stroke-width="0.5"/>
+<text x="54.0" y="580.0" font-size="10" font-weight="normal" fill="#222">Zapatas / paralelas</text>
+<rect x="170.0" y="571.0" width="10" height="10" fill="#4f7cc4" stroke="#333" stroke-width="0.5"/>
+<text x="184.0" y="580.0" font-size="10" font-weight="normal" fill="#222">Placa matriz</text>
+<rect x="300.0" y="571.0" width="10" height="10" fill="#5fae6b" stroke="#333" stroke-width="0.5"/>
+<text x="314.0" y="580.0" font-size="10" font-weight="normal" fill="#222">Pisador</text>
+<rect x="430.0" y="571.0" width="10" height="10" fill="#d9a441" stroke="#333" stroke-width="0.5"/>
+<text x="444.0" y="580.0" font-size="10" font-weight="normal" fill="#222">Porta punzones</text>
+<rect x="40.0" y="589.0" width="10" height="10" fill="#c48a4f" stroke="#333" stroke-width="0.5"/>
+<text x="54.0" y="598.0" font-size="10" font-weight="normal" fill="#222">Respaldos</text>
+<rect x="170.0" y="589.0" width="10" height="10" fill="#c0392b" stroke="#333" stroke-width="0.5"/>
+<text x="184.0" y="598.0" font-size="10" font-weight="normal" fill="#222">Postes</text>
+<rect x="300.0" y="589.0" width="10" height="10" fill="#b07d2b" stroke="#333" stroke-width="0.5"/>
+<text x="314.0" y="598.0" font-size="10" font-weight="normal" fill="#222">Bujes</text>
+</svg>

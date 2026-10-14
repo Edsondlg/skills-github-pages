@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "troquel-nx": {
+      "command": "C:\\troquel-nx\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "troquel.mcp_server"],
+      "env": {
+        "TROQUEL_OUTPUT_DIR": "C:\\troqueles",
+        "UGII_BASE_DIR": "C:\\Program Files\\Siemens\\NX2306"
+      }
+    }
+  }
+}
