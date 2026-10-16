@@ -308,3 +308,40 @@ test('9. exportación STEP/STL y formato de aristas', async () => {
   close(viaHandle.distance, 10);
   await assert.rejects(K.handle({ type: 'nada' }), /desconocido/);
 });
+
+// ---------- Reproducciones de hallazgos de la ronda de corrección ----------
+
+test('10a. perfil que cruza el eje por 0,005 mm: error en español, no [object …]', () => {
+  const pts = [[0, -0.005], [10, -0.005], [10, 5], [0, 5]];
+  assert.throws(
+    () => K.build({ mode: 'revolve', tol: 0.01, regions: [{ id: 'r', outer: poly(pts), holes: [] }], revolve: { axis: { p: [0, 0], d: [1, 0] } } }),
+    (e) => /cruza el eje/.test(e.message) && !/\[object/.test(e.message),
+  );
+});
+
+test('10b. esquina R0,5 con la línea vecina 0,009 mm desplazada: el cilindro conserva R0,5', () => {
+  const outer = { segs: [L([0, 0], [10, 0]), L([10, 0], [10, 9.5]), { type: 'arc', c: [9.5, 9.5], r: 0.5, a0: 0, a1: PI / 2, ccw: true }, L([9.5, 10.009], [0, 10]), L([0, 10], [0, 0])] };
+  const r = K.build(extrudeJob([{ id: 'a', outer, holes: [] }], 1));
+  const cyl = r.topology.faces.filter((f) => f.type === 'cylinder');
+  assert.equal(cyl.length, 1);
+  assert.ok(Math.abs(cyl[0].radius - 0.5) < 1e-12, `radio ${cyl[0].radius}`);
+  assert.ok(r.props.valid);
+});
+
+test('10c. excepción de OCCT (agujero de radio negativo): mensaje en español legible', () => {
+  assert.throws(
+    () => K.build(extrudeJob([{ id: 'p', outer: rect(0, 0, 10, 10), holes: [{ loop: circle([5, 5], -1), op: 'through' }] }], 1)),
+    (e) => /^Error interno de OpenCascade \(.+\)\. Revise/.test(e.message) && !/object|WebAssembly/.test(e.message),
+  );
+});
+
+// Límite conocido: con 400 agujeros la malla (BRepMesh de OCCT sobre una cara plana con muchos
+// círculos) tarda ~7 s; IMeshTools_Parameters no está enlazado y no se puede ajustar aquí.
+test('11. placa con 100 agujeros pasantes: se construye sin agotar el tiempo', { timeout: 60000 }, () => {
+  const holes = [];
+  for (let i = 0; i < 100; i++) holes.push({ loop: circle([5 + (i % 10) * 10, 5 + Math.floor(i / 10) * 10], 2), op: 'through' });
+  const t0 = performance.now();
+  const r = K.build(extrudeJob([{ id: 'p', outer: rect(0, 0, 100, 100), holes }], 3));
+  console.log(`100 agujeros: ${(performance.now() - t0).toFixed(0)} ms (build ${r.timings.buildMs.toFixed(0)}, props ${r.timings.propsMs.toFixed(0)}, malla ${r.timings.meshMs.toFixed(0)})`);
+  assert.equal(r.topology.faces.filter((f) => f.type === 'cylinder').length, 100);
+});

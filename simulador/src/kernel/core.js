@@ -363,16 +363,54 @@ function makeSplineEdge(s, ps, pe, F) {
   return e;
 }
 
+// Aristas básicas sin fugas: R.makeLine/makeCircle/makeThreePointArc no liberan el constructor,
+// los gp_Pnt ni los gp_XYZ intermedios (~0,2–1 KB de heap wasm por arista y reconstrucción).
+function withPnts(pts, f) {
+  const g = pts.map((p) => new oc.gp_Pnt(p[0], p[1], p[2]));
+  try {
+    return f(...g);
+  } finally {
+    deleteAll(g);
+  }
+}
+function edgeOf(mk) {
+  try {
+    return new R.Edge(mk.Edge());
+  } finally {
+    mk.delete();
+  }
+}
+const lineEdge = (a, b) => withPnts([a, b], (pa, pb) => edgeOf(new oc.BRepBuilderAPI_MakeEdge(pa, pb)));
+function circleEdge(r, c, n) {
+  return withPnts([c], (pc) => {
+    const d = new oc.gp_Dir(n[0], n[1], n[2]), ax = new oc.gp_Ax2(pc, d), circ = new oc.gp_Circ(ax, r);
+    try {
+      return edgeOf(new oc.BRepBuilderAPI_MakeEdge(circ));
+    } finally {
+      circ.delete(); ax.delete(); d.delete();
+    }
+  });
+}
+const arcEdge = (a, m, b) => withPnts([a, m, b], (pa, pm, pb) => {
+  const mk = new oc.GC_MakeArcOfCircle(pa, pm, pb);
+  const curve = mk.Value();
+  try {
+    return edgeOf(new oc.BRepBuilderAPI_MakeEdge(curve));
+  } finally {
+    curve.delete(); mk.delete();
+  }
+});
+
 function makeEdge({ seg: s, ps, pe }, F) {
   switch (s.type) {
     case 'line':
-      return R.makeLine(F.p(ps), F.p(pe));
+      return lineEdge(F.p(ps), F.p(pe));
     case 'arc': {
-      if (isFullSweep(arcSweep(s))) return R.makeCircle(s.r, F.p(s.c), F.n.map((c) => c * (s.ccw ? 1 : -1)));
-      return R.makeThreePointArc(F.p(ps), F.p(segPoint(s, 0.5)), F.p(pe));
+      if (isFullSweep(arcSweep(s))) return circleEdge(s.r, F.p(s.c), F.n.map((c) => c * (s.ccw ? 1 : -1)));
+      return arcEdge(F.p(ps), F.p(segPoint(s, 0.5)), F.p(pe));
     }
     case 'circle':
-      return R.makeCircle(s.r, F.p(s.c), F.n.map((c) => c * (s.ccw ? 1 : -1)));
+      return circleEdge(s.r, F.p(s.c), F.n.map((c) => c * (s.ccw ? 1 : -1)));
     case 'ellipse':
       return makeEllipseEdge(s, F, isFullSweep(ellSweep(s)));
     case 'bezier':
@@ -472,12 +510,12 @@ function extrudeFace(face, vec) {
 }
 
 function revolveFace(face, p, d, angleDeg) {
-  const ax = R.makeAx1(p, d);
+  const pp = new oc.gp_Pnt(p[0], p[1], p[2]), dd = new oc.gp_Dir(d[0], d[1], d[2]), ax = new oc.gp_Ax1(pp, dd);
   const mk = new oc.BRepPrimAPI_MakeRevol(face.wrapped, ax, (angleDeg * Math.PI) / 180, false);
   try {
     return own(mk.Shape());
   } finally {
-    mk.delete(); ax.delete();
+    mk.delete(); ax.delete(); dd.delete(); pp.delete();
   }
 }
 
