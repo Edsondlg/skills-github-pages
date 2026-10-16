@@ -40,3 +40,7 @@ Thumbs.db
 tube-bending/node_modules/
 tube-bending/.scratch/
 tube-bending/dist/
+tube-bending/desktop/bin/
+tube-bending/desktop/dist/
+tube-bending/desktop/resources/
+tube-bending/desktop/.tmp/
