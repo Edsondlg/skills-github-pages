@@ -668,8 +668,16 @@ function updateSectionRange() {
   r.step = String(Math.max(half / 500, 1e-4));
   const off = Math.max(-half, Math.min(half, Number(r.value) || 0));
   ui.setRange(r, off);
-  $('sectionValue').textContent = S.F.len(off);
+  $('sectionValue').textContent = sectionLabel(ax, off);
   viewer.setSection({ axis: ax, offset: off });
+}
+
+// El deslizador trabaja relativo al centro de la caja; se muestra la coordenada absoluta del corte.
+function sectionLabel(ax, off) {
+  const i = 'xyz'.indexOf(ax);
+  const bb = S.partData?.bbox;
+  const c = bb ? (bb.min[i] + bb.max[i]) / 2 : 0;
+  return `${ax.toUpperCase()} = ${S.F.len(c + off)}`;
 }
 
 function setUnits(v) {
@@ -697,10 +705,16 @@ function initViews() {
   ui.onTab(() => requestAnimationFrame(() => {
     view2d.resize();
     viewer.resize();
-    if (S.need2dFit && $('view2d').clientWidth) {
+    // Reencuadre si el plano se cargó oculto o si cambió el ancho del panel (2D ↔ dividido).
+    const w = $('view2d').clientWidth;
+    if (w && (S.need2dFit || w !== S.last2dWidth)) {
       S.need2dFit = false;
       view2d.fit();
     }
+    if (w) S.last2dWidth = w;
+    const w3 = $('view3d').clientWidth;
+    if (w3 && S.build && S.last3dWidth && w3 !== S.last3dWidth) viewer.fit();
+    if (w3) S.last3dWidth = w3;
   }));
 
   // 2D
@@ -752,7 +766,7 @@ function initViews() {
   });
   $('rngSection').addEventListener('input', (e) => {
     const v = Number(e.target.value);
-    $('sectionValue').textContent = S.F.len(v);
+    $('sectionValue').textContent = sectionLabel(ui.getSegmented($('sectionAxisSeg')) || 'x', v);
     viewer.setSection({ offset: v });
   });
   $('btnSectionFlip').addEventListener('click', () => viewer.setSection({ flip: !viewer.getSection().flip }));
