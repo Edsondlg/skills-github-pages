@@ -43,7 +43,7 @@ funcionar.
   - Multivista por siluetas: se encuadra la planta, el alzado y las laterales con «Definir ventana»;
     la pieza es la intersección de las siluetas extruidas. Da igual el sistema de proyección (primer o
     tercer ángulo): cada vista se alinea por su propia caja envolvente.
-- **Espesor:** valor libre, calibres de lámina (10–16 ga) o accesos rápidos; extrusión simétrica.
+- **Espesor:** valor libre, calibres de lámina (10–26 ga) o accesos rápidos; extrusión simétrica.
 - **Visor 3D:** vistas estándar, ortográfica/perspectiva, aristas, rayos X, alambre, rejilla, caja
   envolvente y corte de sección (X, Y o Z). Pestañas «Plano 2D», «Pieza 3D» y «Dividido».
 - **Propiedades:** masa, volumen, densidad, área de superficie, caja envolvente, centro de masa,

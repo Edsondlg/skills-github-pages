@@ -818,3 +818,19 @@ input[type="checkbox"].chk:checked::after, .check input[type="checkbox"]:checked
 .calib-measured { color: var(--text-2); font-size: var(--fs-sm); }
 .calib-error { color: var(--danger); font-size: var(--fs-sm); }
 .calib-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ---------- Ajustes de QA visual ---------- */
+/* Subtítulos: evita una palabra sola en la última línea */
+.panel-sub { text-wrap: pretty; }
+/* Espesores rápidos: los 7 caben en una línea del panel izquierdo */
+#thicknessChips { gap: 4px; }
+#thicknessChips .chip-btn { padding: 0 7px; }
+/* Nombre del material completo (puede ocupar dos líneas) */
+#propMaterial .kv-value { white-space: normal; text-wrap: balance; }
+/* Barra de sección en paneles muy estrechos (vista dividida): dos filas, libre el gizmo */
+.section-bar .range-out { white-space: nowrap; }
+@container pane (max-width: 460px) {
+  .section-bar { flex-wrap: wrap; height: auto; row-gap: 4px; padding: 4px 6px; max-width: calc(100% - 150px); }
+  .section-bar .range { flex: 1 1 60px; }
+  .hint-pill { bottom: 92px; }
+}
