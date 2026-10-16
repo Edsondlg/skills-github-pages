@@ -179,7 +179,7 @@ function makeConcreteTextures(renderer) {
   }
   ctxM.putImageData(im, 0, 0); ctxR.putImageData(ir, 0, 0);
   // Saw-cut slab joints along the edges (tile = one slab): dark in colour, rough in roughness.
-  ctxM.fillStyle = 'rgba(28,28,30,0.75)';
+  ctxM.fillStyle = 'rgba(28,28,30,0.55)';
   ctxM.fillRect(0, 0, w, 4); ctxM.fillRect(0, 0, 4, h);
   ctxR.fillStyle = 'rgb(235,235,235)';
   ctxR.fillRect(0, 0, w, 4); ctxR.fillRect(0, 0, 4, h);
@@ -199,11 +199,11 @@ export function makeContactShadowTexture() {
   return t;
 }
 
-export function makeGradientBackground(top = '#4a5058', bottom = '#9da2a8') {
+export function makeGradientBackground(top = '#7b8188', bottom = '#9a9ea3') {
   const c = canvas(4, 512);
   const ctx = c.getContext('2d');
   const g = ctx.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0, top); g.addColorStop(0.7, bottom); g.addColorStop(1, '#8a8e93');
+  g.addColorStop(0, top); g.addColorStop(0.55, bottom); g.addColorStop(1, bottom);
   ctx.fillStyle = g; ctx.fillRect(0, 0, 4, 512);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -240,14 +240,16 @@ export function createMaterials(renderer) {
       color: 0xffffff, metalness: 1.0, roughness: 1.0, map: tubeTex.map, roughnessMap: tubeTex.roughnessMap,
       envMapIntensity: 1.15,
     }),
+    // Bore: darker, duller and lit less by the environment, so an open end reads as a ring with a dark
+    // interior (rendered DoubleSide by TubeMesh).
     tubeInner: new THREE.MeshStandardMaterial({
-      color: 0xb8b2a8, metalness: 0.85, roughness: 0.55, envMapIntensity: 0.8,
+      color: 0x6a665f, metalness: 0.8, roughness: 0.6, envMapIntensity: 0.35,
     }),
     tubeColor: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.05, roughness: 0.55 }),
-    tubeColorInner: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.05, roughness: 0.7, color: 0xcfcfcf }),
+    tubeColorInner: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.05, roughness: 0.7, color: 0x8a8a8a }),
     // Machine
     paintYellow: painted(0xf2a900, 0.75, 0.85), // ≈ RAL 1003 signal yellow, glossy clearcoat
-    paintGrey: painted(0xa9afb6, 1.1),          // light cool-grey satin cabinet paint
+    paintGrey: painted(0x8f959c, 1.1),          // cool-grey satin cabinet paint
     paintGreyDark: painted(0x6c727a, 1.0),
     paintBlack: painted(0x18191b, 0.85, 0.3),
     paintOrange: painted(0xc8401a, 0.8, 0.5),   // gearbox block
@@ -265,8 +267,8 @@ export function createMaterials(renderer) {
     blockRed: new THREE.MeshStandardMaterial({ color: 0xb3221c, metalness: 0.4, roughness: 0.4 }),
     blockGreen: new THREE.MeshStandardMaterial({ color: 0x2f8f3a, metalness: 0.4, roughness: 0.4 }),
     floor: new THREE.MeshStandardMaterial({
-      color: 0xffffff, map: concrete.map, roughnessMap: concrete.roughnessMap, roughness: 1.0, metalness: 0.0,
-      envMapIntensity: 0.6,
+      color: 0x9a9da1, map: concrete.map, roughnessMap: concrete.roughnessMap, roughness: 1.0, metalness: 0.0,
+      envMapIntensity: 0.35,
     }),
     contactShadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, depthWrite: false, alphaMap: makeContactShadowTexture() }),
     // Tools (clippable instances)
@@ -288,13 +290,13 @@ export function createMaterials(renderer) {
 /** Tint the tube steel according to the material family (stainless, carbon steel, aluminium, copper…). */
 export function applyTubeTint(materials, material) {
   const fam = String(material?.family || '').toLowerCase();
-  let color = 0xffffff, inner = 0xb8b2a8;
-  if (/alum/.test(fam)) { color = 0xf2f4f7; inner = 0xc8ccd2; }
-  else if (/cobre|copper/.test(fam)) { color = 0xe8a27a; inner = 0xb07050; }
-  else if (/lat[oó]n|brass/.test(fam)) { color = 0xe8cf82; inner = 0xb09a5a; }
-  else if (/titan/.test(fam)) { color = 0xd9d6cf; inner = 0xa8a49a; }
-  else if (/inox|stainless/.test(fam)) { color = 0xffffff; inner = 0xbdb9b2; }
-  else if (fam) { color = 0xd6d8da; inner = 0x8f8a80; } // carbon / alloy steel: slightly darker
+  let color = 0xffffff, inner = 0x6a665f;
+  if (/alum/.test(fam)) { color = 0xf2f4f7; inner = 0x75787d; }
+  else if (/cobre|copper/.test(fam)) { color = 0xe8a27a; inner = 0x6e4632; }
+  else if (/lat[oó]n|brass/.test(fam)) { color = 0xe8cf82; inner = 0x6e6038; }
+  else if (/titan/.test(fam)) { color = 0xd9d6cf; inner = 0x66635d; }
+  else if (/inox|stainless/.test(fam)) { color = 0xffffff; inner = 0x6e6a64; }
+  else if (fam) { color = 0xd6d8da; inner = 0x57534d; } // carbon / alloy steel: slightly darker
   materials.tubeOuter.color.setHex(color);
   materials.tubeInner.color.setHex(inner);
 }

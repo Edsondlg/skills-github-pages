@@ -11,6 +11,7 @@ import { buildStations } from '../scene/tube-mesh.js';
 
 const SAMPLE = new URLSearchParams(location.search).get('sample') || 'escape_5_dobleces';
 const MATERIAL = new URLSearchParams(location.search).get('material') || 'aisi409';
+const QUALITY = new URLSearchParams(location.search).get('quality') === 'medium' ? 'medium' : 'high';
 const $ = (id) => document.getElementById(id);
 const demo = { t: 0, playing: false };
 window.demo = demo;
@@ -31,7 +32,7 @@ async function init() {
   const OD = tube.OD;
   const kin = buildKinematics({ lra, plan, OD });
 
-  const viewer = await createViewer($('view'), { quality: 'high' });
+  const viewer = await createViewer($('view'), { quality: QUALITY });
   viewer.setup({ OD, plan, material });
   const sampleVertex = (s, phi) => {
     const f = sampler.at(s, phi);
