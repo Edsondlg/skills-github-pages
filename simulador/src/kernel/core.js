@@ -13,16 +13,13 @@ const TAU = Math.PI * 2;
 // defecto de OCCT es exacta y rápida; con B-splines/Bézier comete errores de ~3e-4, así que ahí
 // se usa Gauss–Kronrod adaptativa por tramo (IsUseSpan), que coincide con el área 2D exacta (~1e-9).
 const GPROP_EPS = 1e-7;
-const FREEFORM_CURVES = new Set(['BEZIER_CURVE', 'BSPLINE_CURVE', 'OFFSET_CURVE', 'OTHER_CURVE']);
-const FREEFORM_SURFACES = new Set(['BEZIER_SURFACE', 'BSPLINE_SURFACE', 'OFFSET_SURFACE', 'OTHER_SURFACE']);
-const hasFreeform = (shape) => shape.edges.some((e) => FREEFORM_CURVES.has(e.geomType))
-  || shape.faces.some((f) => FREEFORM_SURFACES.has(f.geomType));
-const gpropVolume = (shape, g) => (hasFreeform(shape)
-  ? oc.BRepGProp.VolumePropertiesGK(shape.wrapped, g, GPROP_EPS, false, true, true, true, false)
-  : oc.BRepGProp.VolumeProperties(shape.wrapped, g, false, false, false));
-const gpropSurface = (shape, g) => (hasFreeform(shape)
-  ? oc.BRepGProp.SurfaceProperties(shape.wrapped, g, GPROP_EPS, false)
-  : oc.BRepGProp.SurfaceProperties(shape.wrapped, g, false, false));
+// «free» (forma libre) se calcula una vez por forma con el recorrido indexado de la topología.
+const gpropVolume = (w, g, free) => (free
+  ? oc.BRepGProp.VolumePropertiesGK(w, g, GPROP_EPS, false, true, true, true, false)
+  : oc.BRepGProp.VolumeProperties(w, g, false, false, false));
+const gpropSurface = (w, g, free) => (free
+  ? oc.BRepGProp.SurfaceProperties(w, g, GPROP_EPS, false)
+  : oc.BRepGProp.SurfaceProperties(w, g, false, false));
 // Tolerancia (mm) de la aproximación polinómica de splines racionales.
 const RATIONAL_APPROX_TOL = 1e-5;
 
@@ -38,6 +35,67 @@ export async function init({ wasmBinary } = {}) {
 
 function needOC() {
   if (!oc) throw new Error('El motor CAD no está inicializado.');
+}
+
+// ---------- Recorrido de topología sin fugas ----------
+// R.iterTopo deduplica con IsSame en O(n²) y nunca libera los TopoDS intermedios; aquí se usa un
+// mapa indexado (hash de OCCT) y se libera todo salvo los objetos devueltos (los libera el llamante).
+const TOPO = {
+  vertex: ['TopAbs_VERTEX', 'Vertex'], edge: ['TopAbs_EDGE', 'Edge'], face: ['TopAbs_FACE', 'Face'],
+  shell: ['TopAbs_SHELL', 'Shell'], solid: ['TopAbs_SOLID', 'Solid'],
+};
+function mapShapes(w, kind) {
+  const [en, cast] = TOPO[kind];
+  // TopTools_IndexedMapOfShape no es construible en esta compilación (NCollection_BaseMap sin
+  // enlazar): se agrupa por hash de OCCT y solo se compara IsSame dentro de cada cubeta.
+  const buckets = new Map();
+  const ex = new oc.TopExp_Explorer(w, oc.TopAbs_ShapeEnum[en], oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  const out = [];
+  try {
+    for (; ex.More(); ex.Next()) {
+      const cur = ex.Current();
+      const h = oc.ReplicadShapeHasher.HashCode(cur, R.HASH_CODE_MAX);
+      const list = buckets.get(h);
+      if (!list || !list.some((s) => s.IsSame(cur))) {
+        const s = oc.TopoDS[cast](cur);
+        out.push(s);
+        if (list) list.push(s); else buckets.set(h, [s]);
+      }
+      cur.delete();
+    }
+  } finally {
+    ex.delete();
+  }
+  return out;
+}
+const deleteAll = (list) => { for (const x of list) x.delete(); };
+
+// Tipos geométricos (nombre interno, forma libre) leídos con adaptadores que se liberan.
+const CURVE_KINDS = { GeomAbs_Line: 'line', GeomAbs_Circle: 'circle', GeomAbs_Ellipse: 'ellipse', GeomAbs_BezierCurve: 'bspline', GeomAbs_BSplineCurve: 'bspline' };
+const FREE_CURVES = ['GeomAbs_BezierCurve', 'GeomAbs_BSplineCurve', 'GeomAbs_OffsetCurve', 'GeomAbs_OtherCurve'];
+const SURF_KINDS = { GeomAbs_Plane: 'plane', GeomAbs_Cylinder: 'cylinder', GeomAbs_Cone: 'cone', GeomAbs_Sphere: 'sphere', GeomAbs_Torus: 'torus', GeomAbs_BezierSurface: 'bspline', GeomAbs_BSplineSurface: 'bspline' };
+const FREE_SURFS = ['GeomAbs_BezierSurface', 'GeomAbs_BSplineSurface', 'GeomAbs_OffsetSurface', 'GeomAbs_OtherSurface'];
+let typeTables = null;
+function typeOf(w, isFace) {
+  if (!typeTables || typeTables.oc !== oc) {
+    const tbl = (en, kinds, free) => new Map(Object.keys(en).filter((k) => k.startsWith('GeomAbs_'))
+      .map((k) => [en[k], { kind: kinds[k] || 'other', free: free.includes(k) }]));
+    typeTables = { oc, curve: tbl(oc.GeomAbs_CurveType, CURVE_KINDS, FREE_CURVES), surf: tbl(oc.GeomAbs_SurfaceType, SURF_KINDS, FREE_SURFS) };
+  }
+  const ad = isFace ? new oc.BRepAdaptor_Surface(w, true) : new oc.BRepAdaptor_Curve(w);
+  const t = ad.GetType();
+  ad.delete();
+  return (isFace ? typeTables.surf : typeTables.curve).get(t) || { kind: 'other', free: true };
+}
+// ¿Alguna arista o cara de forma libre? (decide la integración de las propiedades de masa)
+function freeformOf(w) {
+  for (const [kind, isFace] of [['face', true], ['edge', false]]) {
+    const list = mapShapes(w, kind);
+    const free = list.some((x) => typeOf(x, isFace).free);
+    deleteAll(list);
+    if (free) return true;
+  }
+  return false;
 }
 
 // ---------- Geometría 2D de segmentos (contrato C1, implementación propia) ----------
@@ -200,9 +258,10 @@ function loopsBBox(loops) {
 
 // ---------- Contornos → aristas OCCT ----------
 
-// Une huecos ≤ tol moviendo extremos de segmentos flexibles; el resto se puentea con líneas.
+// Une huecos ≤ tol moviendo extremos de segmentos flexibles (línea, Bézier, spline); los arcos,
+// círculos y elipses conservan centro y radio exactos. Entre dos rígidos se puentea con una línea.
 function closeGaps(segs, tol, label) {
-  const rigid = (s) => s.type === 'circle' || s.type === 'ellipse';
+  const rigid = (s) => s.type === 'circle' || s.type === 'ellipse' || s.type === 'arc';
   const n = segs.length;
   const ends = segs.map((s) => ({ ps: segStart(s), pe: segEnd(s) }));
   const bridges = new Map();
@@ -376,33 +435,66 @@ function makeRegionFace(outerSegs, holeSegsList, F, tol, label) {
   return face;
 }
 
-function surfaceArea(shape) {
+function surfaceArea(shape, free = freeformOf(shape.wrapped)) {
   const g = new oc.GProp_GProps();
-  gpropSurface(shape, g);
+  gpropSurface(shape.wrapped, g, free);
   const a = g.Mass();
   g.delete();
   return a;
 }
 
-function volumeOf(shape) {
+function volumeOf(shape, free = freeformOf(shape.wrapped)) {
   const g = new oc.GProp_GProps();
-  gpropVolume(shape, g);
+  gpropVolume(shape.wrapped, g, free);
   const v = g.Mass();
   g.delete();
   return v;
 }
 
-function extrudeFace(face, vec) {
-  const v = new R.Vector(vec);
-  const s = R.basicFaceExtrusion(face, v);
-  v.delete();
-  return s;
+// R.cast copia el TopoDS; el original (devuelto por valor) debe liberarse o retiene la pieza
+// entera (y su malla) en el heap. Las funciones de replicad equivalentes no lo liberan.
+function own(raw) {
+  try {
+    return R.cast(raw);
+  } finally {
+    raw.delete();
+  }
 }
 
-// Operaciones booleanas que liberan los operandos.
-function fuse(a, b) { const r = a.fuse(b); a.delete(); b.delete(); return r; }
-function cut(a, b) { const r = a.cut(b); a.delete(); b.delete(); return r; }
-function common(a, b) { const r = a.intersect(b); a.delete(); b.delete(); return r; }
+function extrudeFace(face, vec) {
+  const v = new R.Vector(vec);
+  const mk = new oc.BRepPrimAPI_MakePrism(face.wrapped, v.wrapped, false, true);
+  try {
+    return own(mk.Shape());
+  } finally {
+    mk.delete(); v.delete();
+  }
+}
+
+function revolveFace(face, p, d, angleDeg) {
+  const ax = R.makeAx1(p, d);
+  const mk = new oc.BRepPrimAPI_MakeRevol(face.wrapped, ax, (angleDeg * Math.PI) / 180, false);
+  try {
+    return own(mk.Shape());
+  } finally {
+    mk.delete(); ax.delete();
+  }
+}
+
+// Operaciones booleanas (como replicad, con simplificación) que liberan operandos y constructor.
+function boolOp(name, a, b) {
+  const mk = new oc[name](a.wrapped, b.wrapped);
+  try {
+    mk.Build();
+    mk.SimplifyResult(true, true, 1e-3);
+    return own(mk.Shape());
+  } finally {
+    mk.delete(); a.delete(); b.delete();
+  }
+}
+const fuse = (a, b) => boolOp('BRepAlgoAPI_Fuse', a, b);
+const cut = (a, b) => boolOp('BRepAlgoAPI_Cut', a, b);
+const common = (a, b) => boolOp('BRepAlgoAPI_Common', a, b);
 
 const regionLabel = (r, i) => `Región «${r.id ?? i + 1}»`;
 
@@ -448,19 +540,24 @@ function buildExtrude(job, warnings) {
   return shape;
 }
 
+// Inicio, fin y punto medio (paramétrico) de una arista TopoDS.
 function edgePts(e) {
-  const a = e.startPoint, b = e.endPoint, m = e.pointAt(0.5);
-  const r = [a.toTuple(), b.toTuple(), m.toTuple()];
-  a.delete(); b.delete(); m.delete();
+  const ad = new oc.BRepAdaptor_Curve(e);
+  const u0 = ad.FirstParameter(), u1 = ad.LastParameter();
+  const r = [u0, u1, (u0 + u1) / 2].map((u) => { const q = ad.Value(u); const p = pnt(q); q.delete(); return p; });
+  ad.delete();
   return r;
 }
 
 function runFillet(shape, edges, radius, chamfer) {
   const mk = chamfer ? new oc.BRepFilletAPI_MakeChamfer(shape.wrapped) : new oc.BRepFilletAPI_MakeFillet(shape.wrapped, oc.ChFi3d_FilletShape.ChFi3d_Rational);
   try {
-    for (const e of edges) mk.Add(radius, e.wrapped);
-    const res = R.cast(mk.Shape());
-    if (!(volumeOf(res) > 0)) throw new Error('resultado vacío');
+    for (const e of edges) mk.Add(radius, e);
+    const res = own(mk.Shape());
+    if (!(volumeOf(res) > 0)) {
+      res.delete();
+      throw new Error('resultado vacío');
+    }
     return res;
   } finally {
     mk.delete();
@@ -470,24 +567,25 @@ function runFillet(shape, edges, radius, chamfer) {
 function applyFillets(shape, f, tops, tol, warnings) {
   const vr = f.vertical || 0, tr = f.top || 0, cr = f.chamferTop || 0;
   const tryOp = (name, value, select, chamfer) => {
-    const edges = shape.edges.filter(select);
-    if (!edges.length) {
-      warnings.push(`${name}: no se encontraron aristas a las que aplicarlo.`);
-      return;
-    }
+    const all = mapShapes(shape.wrapped, 'edge');
     try {
+      const edges = all.filter((e) => select(e));
+      if (!edges.length) {
+        warnings.push(`${name}: no se encontraron aristas a las que aplicarlo.`);
+        return;
+      }
       const res = runFillet(shape, edges, value, chamfer);
       shape.delete();
       shape = res;
     } catch (e) {
       warnings.push(`${name} (${value} mm) no se pudo aplicar; se conserva la pieza sin él.`);
     } finally {
-      edges.forEach((e) => e.delete());
+      deleteAll(all);
     }
   };
   if (vr > 0) {
     tryOp('Redondeo de aristas verticales', vr, (e) => {
-      if (e.geomType !== 'LINE') return false;
+      if (typeOf(e, false).kind !== 'line') return false;
       const [a, b] = edgePts(e);
       return Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[2] - b[2]) > 1e-6;
     }, false);
@@ -524,14 +622,14 @@ function buildRevolve(job, warnings) {
       const s = d[0] * (p[1] - axis.p[1]) - d[1] * (p[0] - axis.p[0]);
       lo = Math.min(lo, s); hi = Math.max(hi, s);
     }
-    const eps = Math.max(tol, 1e-9);
-    if (lo < -eps && hi > eps) throw new Error(`${label}: el perfil cruza el eje de revolución; debe quedar a un solo lado del eje.`);
+    // Cualquier punto a cada lado del eje (más allá del ruido numérico) es un cruce.
+    if (lo < -1e-9 && hi > 1e-9) throw new Error(`${label}: el perfil cruza el eje de revolución; debe quedar a un solo lado del eje.`);
     const holes = (reg.holes || []).filter((h) => (h.op || 'through') !== 'none');
     if (holes.some((h) => h.op === 'blind')) warnings.push(`${label}: en revolución los agujeros ciegos se tratan como huecos del perfil.`);
     const face = makeRegionFace(outer, holes.map((h, k) => loopSegs(h.loop, `${label}, agujero ${k + 1}`)), FRAME_XY, tol, label);
     let solid;
     try {
-      solid = R.revolution(face, [axis.p[0], axis.p[1], 0], [d[0], d[1], 0], angle);
+      solid = revolveFace(face, [axis.p[0], axis.p[1], 0], [d[0], d[1], 0], angle);
     } finally {
       face.delete();
     }
@@ -638,22 +736,20 @@ function ax1Info(ax) {
   return r;
 }
 
-const FACE_TYPES = { PLANE: 'plane', CYLINDRE: 'cylinder', CONE: 'cone', SPHERE: 'sphere', TORUS: 'torus', BSPLINE_SURFACE: 'bspline', BEZIER_SURFACE: 'bspline' };
-const EDGE_TYPES = { LINE: 'line', CIRCLE: 'circle', ELLIPSE: 'ellipse', BSPLINE_CURVE: 'bspline', BEZIER_CURVE: 'bspline' };
-
-function faceInfo(face, id) {
-  const type = FACE_TYPES[face.geomType] || 'other';
+// face: TopoDS_Face; type: tipo interno; free: la cara o sus aristas son de forma libre.
+function faceInfo(face, id, type, free) {
   const g = new oc.GProp_GProps();
-  gpropSurface(face, g);
+  gpropSurface(face, g, free);
   const c = g.CentreOfMass();
   const info = { id, type, area: g.Mass(), center: pnt(c) };
   c.delete(); g.delete();
-  const ad = new oc.BRepAdaptor_Surface(face.wrapped, true);
+  const ad = new oc.BRepAdaptor_Surface(face, true);
   try {
     if (type === 'plane') {
-      const n = face.normalAt();
+      const fw = new R.Face(oc.TopoDS.Face(face));
+      const n = fw.normalAt();
       info.normal = n.toTuple();
-      n.delete();
+      n.delete(); fw.delete();
     } else if (type === 'cylinder') {
       const cy = ad.Cylinder(), ax = cy.Axis();
       info.radius = cy.Radius();
@@ -674,11 +770,13 @@ function faceInfo(face, id) {
   return info;
 }
 
-function edgeInfo(edge, id) {
-  const type = EDGE_TYPES[edge.geomType] || 'other';
+function edgeInfo(edge, id, type) {
   const [start, end] = edgePts(edge);
-  const info = { id, type, length: edge.length, start, end, closed: oc.BRep_Tool.IsClosed(edge.wrapped) };
-  const ad = new oc.BRepAdaptor_Curve(edge.wrapped);
+  const g = new oc.GProp_GProps();
+  oc.BRepGProp.LinearProperties(edge, g, true, false);
+  const info = { id, type, length: g.Mass(), start, end, closed: oc.BRep_Tool.IsClosed(edge) };
+  g.delete();
+  const ad = new oc.BRepAdaptor_Curve(edge);
   try {
     if (type === 'line') {
       const L = Math.hypot(end[0] - start[0], end[1] - start[1], end[2] - start[2]) || 1;
@@ -698,27 +796,39 @@ function edgeInfo(edge, id) {
   return info;
 }
 
+// Un único recorrido indexado por pieza. Los TopoDS quedan en «owned» hasta releaseCurrent.
+// Ids = ReplicadShapeHasher, los mismos que usan los extractores de malla de replicad.
 function collectTopology(shape) {
-  const faces = new Map(), edges = new Map(), vertices = new Map();
-  const topo = { faces: [], edges: [], vertices: [] };
-  for (const f of shape.faces) {
-    const id = f.hashCode;
-    faces.set(id, f);
-    topo.faces.push(faceInfo(f, id));
+  const w = shape.wrapped;
+  const F = mapShapes(w, 'face'), E = mapShapes(w, 'edge'), V = mapShapes(w, 'vertex');
+  const owned = [...F, ...E, ...V];
+  try {
+    const ft = F.map((f) => typeOf(f, true)), et = E.map((e) => typeOf(e, false));
+    const free = ft.some((t) => t.free) || et.some((t) => t.free);
+    const faces = new Map(), edges = new Map(), vertices = new Map();
+    const topo = { faces: [], edges: [], vertices: [] };
+    F.forEach((f, i) => {
+      const id = hashOf(f);
+      faces.set(id, f);
+      topo.faces.push(faceInfo(f, id, ft[i].kind, free && (ft[i].free || freeformOf(f))));
+    });
+    E.forEach((e, i) => {
+      const id = hashOf(e);
+      edges.set(id, e);
+      topo.edges.push(edgeInfo(e, id, et[i].kind));
+    });
+    for (const v of V) {
+      const id = hashOf(v);
+      vertices.set(id, v);
+      const p = oc.BRep_Tool.Pnt(v);
+      topo.vertices.push({ id, p: pnt(p) });
+      p.delete();
+    }
+    return { maps: { faces, edges, vertices }, owned, topo, free };
+  } catch (e) {
+    deleteAll(owned);
+    throw e;
   }
-  for (const e of shape.edges) {
-    const id = e.hashCode;
-    edges.set(id, e);
-    topo.edges.push(edgeInfo(e, id));
-  }
-  for (const v of R.iterTopo(shape.wrapped, 'vertex')) {
-    const id = hashOf(v);
-    vertices.set(id, v);
-    const p = oc.BRep_Tool.Pnt(v);
-    topo.vertices.push({ id, p: pnt(p) });
-    p.delete();
-  }
-  return { maps: { faces, edges, vertices }, topo };
 }
 
 // Valores y vectores propios de una matriz simétrica 3×3 (Jacobi cíclico).
@@ -756,9 +866,26 @@ function jacobiEigen(M) {
   return { moments: pairs.map((p) => p.val), axes: pairs.map((p) => p.vec) };
 }
 
-function computeProps(shape, topo) {
+// Validez B-rep de OCCT (una vez por pieza). Crear y borrar un BRepCheck_Analyzer por pieza
+// retiene la pieza analizada (~0,5 MB con 16 agujeros); un único analizador reutilizado con Init
+// y devuelto después a una forma mínima no pierde memoria.
+let analyzer = null;
+function isValidShape(w) {
+  if (!analyzer || analyzer.oc !== oc) {
+    const tiny = R.makeBox([0, 0, 0], [1, 1, 1]);
+    analyzer = { oc, tiny, an: new oc.BRepCheck_Analyzer(tiny.wrapped, true, false) };
+  }
+  try {
+    analyzer.an.Init(w, true);
+    return analyzer.an.IsValid();
+  } finally {
+    analyzer.an.Init(analyzer.tiny.wrapped, true);
+  }
+}
+
+function computeProps(shape, topo, free) {
   const g = new oc.GProp_GProps();
-  gpropVolume(shape, g);
+  gpropVolume(shape.wrapped, g, free);
   const volume = g.Mass();
   const cP = g.CentreOfMass();
   const centroid = pnt(cP);
@@ -780,22 +907,22 @@ function computeProps(shape, topo) {
   const min = pnt(lo), max = pnt(hi);
   lo.delete(); hi.delete(); box.delete();
 
-  const shells = [...R.iterTopo(shape.wrapped, 'shell')];
-  const solids = [...R.iterTopo(shape.wrapped, 'solid')].length;
+  const shells = mapShapes(shape.wrapped, 'shell'), solidList = mapShapes(shape.wrapped, 'solid');
+  const solids = solidList.length;
   const closed = shells.length > 0 && shells.every((s) => oc.BRep_Tool.IsClosed(s));
-  const an = new oc.BRepCheck_Analyzer(shape.wrapped, true, false);
-  const valid = an.IsValid();
-  an.delete();
+  const nShells = shells.length;
+  deleteAll(shells); deleteAll(solidList);
+  const valid = isValidShape(shape.wrapped);
   const faceTypes = {};
   for (const f of topo.faces) faceTypes[f.type] = (faceTypes[f.type] || 0) + 1;
   return {
     volume,
-    area: surfaceArea(shape),
+    area: surfaceArea(shape, free),
     centroid,
     inertia: { Ixx, Iyy, Izz, Pxy, Pxz, Pyz },
     principal,
     bbox: { min, max, size: [0, 1, 2].map((k) => max[k] - min[k]) },
-    counts: { solids, shells: shells.length, faces: topo.faces.length, edges: topo.edges.length, vertices: topo.vertices.length, faceTypes },
+    counts: { solids, shells: nShells, faces: topo.faces.length, edges: topo.edges.length, vertices: topo.vertices.length, faceTypes },
     valid,
     closed,
   };
@@ -830,15 +957,35 @@ function meshEdgeLines(shape, o) {
 
 function releaseCurrent() {
   if (!current) return;
-  for (const m of [current.faces, current.edges]) for (const s of m.values()) s.delete();
-  for (const v of current.vertices.values()) v.delete();
+  deleteAll(current.owned);
+  // Sin Clean, la triangulación de la malla queda retenida en el heap tras borrar la forma.
+  oc.BRepTools.Clean(current.shape.wrapped, true);
   current.shape.delete();
   current = null;
 }
 
+// Texto de una excepción de OCCT (WebAssembly.Exception o puntero numérico de Emscripten).
+function ocDetail(e) {
+  try {
+    if (typeof WebAssembly !== 'undefined' && WebAssembly.Exception && e instanceof WebAssembly.Exception && oc && oc.getExceptionMessage) {
+      return oc.getExceptionMessage(e).filter(Boolean).join(': ');
+    }
+    if (typeof e === 'number' && oc && oc.OCJS) {
+      const f = oc.OCJS.getStandard_FailureData(e);
+      const msg = f.GetMessageString();
+      f.delete();
+      if (msg) return msg;
+    }
+  } catch (_) { /* se usa el texto genérico */ }
+  if (typeof e === 'number') return `código ${e}`;
+  if (typeof e === 'string') return e;
+  return (e && typeof e.message === 'string' && e.message) || '';
+}
+
 function ocError(e) {
   if (e instanceof Error) return e;
-  return new Error(`Error interno de OpenCascade (${typeof e === 'number' ? `código ${e}` : String(e)}). Revise la geometría del plano.`);
+  const d = ocDetail(e);
+  return new Error(`Error interno de OpenCascade${d ? ` (${d})` : ''}. Revise la geometría del plano.`);
 }
 
 export function build(job) {
@@ -856,15 +1003,21 @@ export function build(job) {
     throw ocError(e);
   }
   const buildMs = now() - t0;
-  if (!(volumeOf(shape) > 0)) {
-    shape.delete();
-    throw new Error('La pieza resultante está vacía (volumen nulo). Revise las vistas o regiones.');
-  }
-  releaseCurrent();
   const t1 = now();
-  const { maps, topo } = collectTopology(shape);
-  const props = computeProps(shape, topo);
-  current = { shape, ...maps };
+  let walk, props;
+  try {
+    walk = collectTopology(shape);
+    if (!(volumeOf(shape, walk.free) > 0)) throw new Error('La pieza resultante está vacía (volumen nulo). Revise las vistas o regiones.');
+    props = computeProps(shape, walk.topo, walk.free);
+  } catch (e) {
+    if (walk) deleteAll(walk.owned);
+    shape.delete();
+    throw ocError(e);
+  }
+  // La pieza anterior se libera solo cuando la nueva es utilizable.
+  releaseCurrent();
+  current = { shape, ...walk.maps, owned: walk.owned, bbox: props.bbox };
+  const topo = walk.topo;
   const t2 = now();
   const mo = meshOpts(job.mesh, props.bbox);
   const mesh = meshShape(shape, mo);
@@ -967,7 +1120,8 @@ export function exportShape(opts = {}) {
 
 export function tessellate(opts = {}) {
   needShape();
-  return meshShape(current.shape, meshOpts(opts, null));
+  // Sin tolerancia explícita se escala con la pieza, como la malla de visualización.
+  return meshShape(current.shape, meshOpts(opts, current.bbox));
 }
 
 export async function handle({ type, payload } = {}) {
