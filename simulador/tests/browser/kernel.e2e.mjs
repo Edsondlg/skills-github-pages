@@ -29,6 +29,26 @@ window.runKernelTest = async () => {
   return { mode: k.mode, status, volume: r.props.volume, typed: r.mesh.vertices instanceof Float32Array,
     dist: d.distance, stepHasMilli: String(step.data).includes('MILLI'), stlBytes: stl.data.byteLength || stl.data.length };
 };
+// Carreras: llamada antes de que start() termine; worker caído o terminado (sin cuelgues).
+window.runRaceTest = async () => {
+  const job = { mode: 'extrude', tol: 0.01, regions: [{ id: 'c', outer: { segs: [L([0,0],[10,0]), L([10,0],[10,10]), L([10,10],[0,10]), L([0,10],[0,0])] }, holes: [] }],
+    extrude: { thickness: 2, symmetric: false, fillets: {} } };
+  const msg = (p) => p.then(() => 'resuelta', (e) => e.message);
+  const a = new KernelClient();
+  const starting = a.start();
+  const early = a.build(job);
+  await starting;
+  const vEarly = (await early).props.volume;
+  const pending = msg(a.build(job));
+  a._worker.dispatchEvent(new ErrorEvent('error', { message: 'fallo simulado' }));
+  const crashed = [await pending, await msg(a.build(job))];
+  const b = new KernelClient();
+  await b.start();
+  const pendingB = msg(b.build(job));
+  b.dispose();
+  const terminated = [await pendingB, await msg(b.build(job))];
+  return { mode: a.mode, vEarly, crashed, terminated };
+};
 `;
 fs.writeFileSync(path.join(dev, 'kernel-e2e-entry.js'), entry);
 await esbuild.build({ entryPoints: [path.join(dev, 'kernel-e2e-entry.js')], outfile: path.join(dev, 'kernel-e2e.js'),
@@ -53,6 +73,13 @@ for (const [file, mode] of [['kernel-e2e.html', 'worker'], ['kernel-e2e-main.htm
     Math.abs(r.dist - 3) < 1e-9 && r.stepHasMilli && r.stlBytes > 84 && errors.length === 0;
   console.log(`${file}: modo=${r.mode} volumen=${r.volume} dist=${r.dist} stl=${r.stlBytes}B ${Date.now() - t0}ms ${ok ? 'OK' : 'FALLA'}`, errors);
   if (!ok) failed = true;
+  if (mode === 'worker') {
+    const q = await p.evaluate(() => window.runRaceTest());
+    const died = /^El motor CAD se detuvo inesperadamente \(fallo simulado\)/;
+    const rok = Math.abs(q.vEarly - 200) < 1e-9 && q.crashed.every((m) => died.test(m)) && q.terminated.every((m) => m === 'Motor CAD cerrado.');
+    console.log(`carreras: ${JSON.stringify(q)} ${rok ? 'OK' : 'FALLA'}`);
+    if (!rok) failed = true;
+  }
   await p.close();
 }
 await browser.close();
