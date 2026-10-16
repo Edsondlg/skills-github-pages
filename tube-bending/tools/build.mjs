@@ -3,7 +3,7 @@
 //  - CSS: cada <link rel="stylesheet" href="css/…"> local se incrusta.
 //  - Piezas de ejemplo: samples/*.stp se incrustan en window.__TB_SAMPLES__ (id = nombre sin extensión).
 //  - Se elimina el <script type="importmap"> (ya no hace falta).
-// Uso: node tools/build.mjs [--out dist/SimuladorDobladoTubo.html]
+// Uso: node tools/build.mjs [--out dist/SimuladorDobladoTubo.html] [--artifact]
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,6 +40,12 @@ const moduleTag = /<script type="module" src="js\/app\.js"><\/script>/i;
 if (!moduleTag.test(html)) throw new Error('index.html debe cargar <script type="module" src="js/app.js"></script>');
 html = html.replace(moduleTag, () => `${samplesTag}\n<script type="module">\n${js}\n</script>`);
 
+// --artifact: page content only (the claude.ai Artifact host adds its own doctype/html/head/body).
+if (process.argv.includes('--artifact')) {
+  html = html.replace(/<!doctype html>\s*/i, '').replace(/<\/?html[^>]*>\s*/gi, '')
+    .replace(/<\/?head>\s*/gi, '').replace(/<\/?body[^>]*>\s*/gi, '')
+    .replace(/<meta charset="utf-8">\s*/i, '').replace(/<meta name="viewport"[^>]*>\s*/i, '');
+}
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, html);
 console.log(`${path.relative(root, out)}  ${(Buffer.byteLength(html) / 1024 / 1024).toFixed(2)} MB`);

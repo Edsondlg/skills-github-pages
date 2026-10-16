@@ -85,11 +85,19 @@ export function createViewportOverlay(stage, { onColorMode, onCamera, onCutaway,
     const v0 = stops[0].value, v1 = stops[stops.length - 1].value, span = v1 - v0 || 1;
     const pos = (v) => (100 * (v - v0)) / span;
     const grad = stops.map((s) => `${s.color} ${pos(s.value).toFixed(1)}%`).join(', ');
-    const step = Math.max(1, Math.ceil(stops.length / 5));
-    const ticks = stops.filter((_, i) => i % step === 0 || i === stops.length - 1);
+    // Three ticks (min, middle, max) with bare numbers — the unit is in the title. The end ticks are
+    // aligned inward so their text never overflows the legend box.
+    const mid = stops[Math.floor((stops.length - 1) / 2)];
+    const ticks = [stops[0], mid, stops[stops.length - 1]];
+    const signed = mode === 'thinning';
+    const num = (v) => (signed && v > 0 ? '+' : '') + fmt(v, Math.abs(span) < 10 ? 2 : 1);
     legendEl.append(
       h('div', { class: 'vo-legend-bar', style: { background: `linear-gradient(to right, ${grad})` } }),
-      h('div', { class: 'vo-legend-ticks' }, ticks.map((s) => h('span', { style: { left: `${pos(s.value)}%` } }, s.label ?? fmt(s.value, 1)))));
+      h('div', { class: 'vo-legend-ticks' }, ticks.map((s, i) => h('span', {
+        class: i === 0 ? 'vo-tick-start' : i === 2 ? 'vo-tick-end' : null,
+        style: { left: `${pos(s.value)}%` },
+      }, num(s.value)))),
+      signed ? h('div', { class: 'vo-legend-ends' }, h('span', null, 'engrosamiento'), h('span', null, 'adelgazamiento')) : null);
   }
 
   return {
