@@ -1,0 +1,28 @@
+// Planos de ejemplo embebidos en el bundle (solo navegador: esbuild carga .dxf/.svg como texto
+// y .png/.jpg como data URL; ver scripts/build.mjs). Las sugerencias viven en sample-suggestions.js.
+import placaSoporte from '../../samples/placa-soporte.dxf';
+import bridaBloques from '../../samples/brida-bloques.dxf';
+import ejePerfil from '../../samples/eje-perfil.dxf';
+import bloqueVistas from '../../samples/bloque-vistas.dxf';
+import levaSpline from '../../samples/leva-spline.dxf';
+import juntaArcos from '../../samples/junta-arcos.dxf';
+import { SAMPLE_SUGGESTIONS } from './sample-suggestions.js';
+
+export { SAMPLE_SUGGESTIONS };
+
+const S = (id, title, description, format, fileName, content) => ({ id, title, description, format, fileName, content, suggested: SAMPLE_SUGGESTIONS[id] });
+
+/**
+ * @type {Array<{id:string,title:string,description:string,format:'dxf'|'svg'|'image',fileName:string,
+ *   content:string,suggested:{mode:string,thickness:number,materialId:string,revolve?:Object,multiview?:{windows:Object}}}>}
+ * content: texto (dxf/svg) o data URL (imagen).
+ */
+export const SAMPLES = [
+  S('placa-soporte', 'Placa soporte', 'Placa troquelada 150×80 mm con esquinas R6, muesca, ranura, 4 barrenos Ø8.5 y uno Ø25. Extrusión de 2 mm.', 'dxf', 'placa-soporte.dxf', placaSoporte),
+  S('brida-bloques', 'Brida con bloques', 'Brida Ø150 con barreno Ø60 y cuñero; 8 barrenos Ø14 en PCD 110 definidos con bloques anidados. Extrusión de 12 mm.', 'dxf', 'brida-bloques.dxf', bridaBloques),
+  S('eje-perfil', 'Flecha escalonada', 'Medio perfil de una flecha con hombros, chaflanes y ranura; revolución de 360° alrededor de su línea de centros.', 'dxf', 'eje-perfil.dxf', ejePerfil),
+  S('bloque-vistas', 'Bloque en L (vistas)', 'Vistas frontal, superior y lateral derecha (tercer ángulo) de un bloque en L con barreno Ø16; reconstrucción por vistas.', 'dxf', 'bloque-vistas.dxf', bloqueVistas),
+  S('leva-spline', 'Leva (pulgadas)', 'Leva dibujada en pulgadas con contorno SPLINE, ranura elíptica y ventana hexagonal. Extrusión de 12.7 mm (½ in).', 'dxf', 'leva-spline.dxf', levaSpline),
+  S('junta-arcos', 'Junta (solo líneas y arcos)', 'Junta con entidades desordenadas, una duplicada y un hueco de 0.0005 mm que se cierra solo. Extrusión de 1.5 mm.', 'dxf', 'junta-arcos.dxf', juntaArcos),
+  // Pendientes (otro módulo): placa-logo.svg (format 'svg') y pieza-escaneada.png (format 'image', content = data URL).
+];
