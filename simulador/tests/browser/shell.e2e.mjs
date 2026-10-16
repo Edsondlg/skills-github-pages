@@ -28,7 +28,8 @@ try {
   page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`));
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.stack || e}`));
   await page.goto(pathToFileURL(path.join(root, 'index.html')).href);
-  await page.waitForFunction(() => document.querySelector('#measureList .measure'));
+  // La app real arranca sin plano: se espera al motor CAD.
+  await page.waitForFunction(() => document.getElementById('kernelChip').dataset.state === 'ready', null, { timeout: 120000 });
 
   const missing = await page.evaluate((list) => list.filter((id) => !document.getElementById(id)), ids);
   assert.deepEqual(missing, [], 'ids documentados que faltan en el DOM');

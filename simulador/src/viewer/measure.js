@@ -138,6 +138,11 @@ export class MeasureTools {
     return this;
   }
 
+  /** Cambia el formato de las mediciones siguientes (las existentes conservan su texto). */
+  setFormat(format) {
+    this.format = { ...DEFAULT_FORMAT, ...(format || {}) };
+  }
+
   list() {
     return this._items.map((r) => ({ ...r.m }));
   }

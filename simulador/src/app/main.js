@@ -1,9 +1,757 @@
-// Punto de entrada provisional: inicializa el armazón con datos de demostración.
-// El integrador lo sustituye por el cableado real (kernel, visores, importadores).
-import { initShell } from './ui-shell.js';
-import { runShellDemo } from './shell-demo.js';
+// Punto de entrada: cablea armazón, motor CAD, visores e importadores (flujo principal).
+// Medición en lista, ventanas de multivista, calibración y exportación se completan con app-api.js.
+import * as ui from './ui-shell.js';
+import { KernelClient } from '../kernel/client.js';
+import { Viewer3D } from '../viewer/viewer3d.js';
+import { MeasureTools } from '../viewer/measure.js';
+import { View2D } from '../ui/view2d.js';
+import { makeFormatter } from '../ui/report.js';
+import { materialGroups, findMaterial, CUSTOM_MATERIAL_ID, customMaterial } from '../ui/materials.js';
+import { decodeDXF } from '../importers/dxf.js';
+import { segTransform } from '../geom2d/segments.js';
+import { detectFormat, importText, importImage, prepareProfile, defaultOpState, applySuggested, makeJob, computeAll } from './pipeline.js';
+import { SAMPLES } from './samples.js';
+import { renderPlano, renderRegions, renderSlots, renderProps, axisText } from './panels.js';
+import { createAppApi } from './app-api.js';
 
+const $ = ui.$;
+const PREFS_KEY = 'plano3d.prefs';
+const AUTO_MS = 400;
+const ROLES = ['top', 'front', 'right', 'left'];
+const MODE_ICONS = { extrude: 'drawing', revolve: 'revolve', multiview: 'multiview' };
+const HINTS_2D = {
+  select: 'Clic en una región para incluirla o excluirla · rueda para zoom',
+  measure: 'Clic en dos puntos para medir · Mayús+clic en un círculo para el radio',
+  window: 'Arrastra un rectángulo alrededor de una vista',
+  axis: 'Clic en una línea del plano para usarla como eje de revolución',
+  calibrate: 'Clic en dos puntos de distancia conocida',
+};
+
+// ───────────── Estado ─────────────
+const S = {
+  drawing: null, profile: null, op: null, build: null, partData: null, builtProfile: null, builtOp: null,
+  material: findMaterial('acero-1008'), F: makeFormatter('metric'), sampleId: null,
+  hiddenLayers: new Set(), selected: -1, openRegions: new Set(),
+  image: null, mmPerPx: 0.25, buildSeq: 0, building: false, everBuilt: false, kernelReady: false,
+  buildWarnings: [], buildError: null,
+};
+
+function loadPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({
+      units: S.F.system === 'imperial' ? 'in' : 'mm', materialId: $('selMaterial').value,
+      density: fields.density.get(), thickness: S.op ? S.op.thickness : fields.thickness.get(),
+      price: fields.price.get(), blankMargin: fields.margin.get(),
+    }));
+  } catch {
+    /* sin almacenamiento */
+  }
+}
+
+let kernel, viewer, measure, view2d, api;
+const fields = {};
+let autoTimer = 0;
+
+// ───────────── Arranque ─────────────
 document.addEventListener('DOMContentLoaded', () => {
-  initShell();
-  runShellDemo();
+  const { examplesMenu } = ui.initShell();
+  const prefs = loadPrefs();
+  ui.setLoading(true, 'Preparando la interfaz…', 'Cargando motor CAD');
+  ui.setStatus({ text: 'Cargando motor CAD…', state: 'loading', mode: 'Motor: cargando' });
+
+  if (prefs.units === 'in') {
+    S.F = makeFormatter('imperial');
+    ui.setSegmented($('unitsSeg'), 'in');
+    $('statusUnits').textContent = 'in';
+  }
+  const theme = ui.getTheme();
+  view2d = new View2D($('view2d'), { theme, format: S.F.len });
+  viewer = new Viewer3D($('view3d'), { theme, format: S.F });
+  kernel = new KernelClient();
+  measure = new MeasureTools(viewer, {
+    kernel, format: S.F,
+    onChange: (list, extra) => {
+      if (getTab3d()) ui.setHint(extra.hint || '', '3d');
+      api?._emitMeasure(list, extra);
+    },
+  });
+  api = createAppApi({ S, kernel, viewer, measure, view2d, actions: { setViewWindow, setRevolveAxis, setImageScale, rebuild: runBuild, pickAxis, loadSample, openFiles } });
+  window.__app = api;
+
+  initFields(prefs);
+  initMaterial(prefs);
+  initOpen(examplesMenu);
+  initOperation();
+  initViews();
+  ui.setEmpty('2d', true);
+  ui.setEmpty('3d', true);
+  ui.setPropsVisible(false);
+  ui.setPlanoLoaded(false);
+  ui.setHint('', 'both');
+
+  kernel.start({
+    onStatus: (t) => {
+      ui.setLoading(true, t);
+      ui.setStatus({ text: t });
+    },
+  }).then(() => {
+    S.kernelReady = true;
+    const m = kernel.mode === 'worker' ? 'worker' : 'hilo principal';
+    ui.setStatus({ text: 'Motor CAD listo', state: 'ready', mode: `Motor: OpenCascade · ${m}` });
+    ui.setLoading(false);
+    if (S.profile) runBuild();
+  }).catch((e) => {
+    console.warn('Motor CAD:', e);
+    ui.setLoading(false);
+    ui.setStatus({ text: 'Motor CAD no disponible', state: 'error', mode: 'Motor: no disponible' });
+    ui.toast(`No se pudo iniciar el motor CAD (${e.message || e}). La importación y la vista 2D siguen disponibles; recargue la página para reintentar.`, { type: 'error', timeout: 0 });
+  });
 });
+
+const getTab3d = () => ui.getActiveTab() !== '2d';
+
+// ───────────── Campos numéricos ─────────────
+function initFields(prefs) {
+  fields.joinTol = ui.numberField($('inpJoinTol'), { min: 0.0001, max: 10, step: 0.001, decimals: 3, onChange: () => reprocess() });
+  fields.pxScale = ui.numberField($('inpPxScale'), { min: 1e-4, max: 1000, step: 0.01, decimals: 4, onChange: (v) => setImageScale(v) });
+  S.mmPerPx = fields.pxScale.get();
+  fields.thickness = ui.numberField($('inpThickness'), { min: 0.01, max: 10000, step: 0.1, decimals: 3, onChange: (v) => setThickness(v) });
+  if (prefs.thickness > 0) fields.thickness.set(prefs.thickness);
+  const fillet = (id, key) => ui.numberField($(id), { min: 0, max: 1000, step: 0.1, decimals: 2, onChange: (v) => editOp((op) => (op.fillets = { ...op.fillets, [key]: v })) });
+  fields.fv = fillet('inpFilletVertical', 'vertical');
+  fields.ft = fillet('inpFilletTop', 'top');
+  fields.ct = fillet('inpChamferTop', 'chamferTop');
+  fields.angle = ui.numberField($('inpAngle'), { min: 1, max: 360, step: 1, decimals: 1, onChange: (v) => setAngle(v) });
+  fields.density = ui.numberField($('inpDensity'), { min: 0.01, max: 30, step: 0.01, decimals: 3, onChange: () => materialChanged() });
+  fields.price = ui.numberField($('inpPrice'), { min: 0, max: 1e5, step: 0.01, decimals: 2, onChange: () => materialChanged() });
+  fields.margin = ui.numberField($('inpBlankMargin'), { min: 0, max: 1000, step: 0.5, decimals: 1, onChange: () => materialChanged() });
+  if (prefs.density > 0) fields.density.set(prefs.density);
+  if (prefs.price >= 0) fields.price.set(prefs.price);
+  if (prefs.blankMargin >= 0) fields.margin.set(prefs.blankMargin);
+}
+
+// ───────────── Material ─────────────
+function initMaterial(prefs) {
+  const sel = $('selMaterial');
+  sel.innerHTML = materialGroups()
+    .map((g) => `<optgroup label="${ui.escapeHtml(g.group)}">${g.items.map((m) => `<option value="${m.id}">${ui.escapeHtml(m.name)}</option>`).join('')}</optgroup>`)
+    .join('') + `<optgroup label="Otro"><option value="${CUSTOM_MATERIAL_ID}">Personalizado (densidad)</option></optgroup>`;
+  sel.value = prefs.materialId && (findMaterial(prefs.materialId) || prefs.materialId === CUSTOM_MATERIAL_ID) ? prefs.materialId : 'acero-1008';
+  sel.addEventListener('change', () => materialChanged());
+  syncMaterial();
+}
+
+function syncMaterial() {
+  const id = $('selMaterial').value;
+  const custom = id === CUSTOM_MATERIAL_ID;
+  S.material = custom ? customMaterial(fields.density.get()) : findMaterial(id);
+  $('densityField').hidden = !custom;
+  $('densityReadout').hidden = custom;
+  $('densityReadout').innerHTML = `${S.material.density.toFixed(3)} <span class="unit">g/cm³</span>`;
+  const short = S.material.name.replace(/\s*\(.*\)$/, '');
+  $('stepMaterialSummary').textContent = `${short} · ${S.material.density} g/cm³`;
+}
+
+const appearance = () => ({ color: S.material.color, metalness: S.material.metalness, roughness: S.material.roughness });
+
+/** Material, precio o margen: solo recalcula propiedades (sin reconstruir). */
+function materialChanged() {
+  syncMaterial();
+  savePrefs();
+  if (S.build) {
+    viewer.setAppearance(appearance());
+    recomputeProps();
+  }
+}
+
+function setMaterialId(id) {
+  if (!findMaterial(id)) return;
+  $('selMaterial').value = id;
+  syncMaterial();
+}
+
+function recomputeProps() {
+  if (!S.build) return;
+  S.partData = computeAll({ build: S.build, profile: S.builtProfile, op: S.builtOp, material: S.material, pricePerKg: fields.price.get(), blankMargin: fields.margin.get() });
+  renderProps(S.partData, S.F, { thickness: S.builtOp.thickness });
+  updateSectionRange();
+  api._emitBuilt();
+}
+
+// ───────────── Apertura ─────────────
+function initOpen(examplesMenu) {
+  ui.setDropzone($('dropzone'), openFiles);
+  ui.setExamples(SAMPLES.map((s) => ({
+    value: s.id, label: s.title,
+    desc: `${s.format === 'image' ? 'Imagen' : s.format.toUpperCase()} · ${{ extrude: 'extrusión', revolve: 'revolución', multiview: 'multivista' }[s.suggested.mode]}`,
+    icon: s.format === 'image' ? 'image' : MODE_ICONS[s.suggested.mode],
+  })));
+  ui.onMenu('examples', (id) => loadSample(id));
+  $('btnDropExample').addEventListener('click', (e) => {
+    e.stopPropagation();
+    examplesMenu.open();
+  });
+}
+
+async function openFiles(files) {
+  const file = files[0];
+  if (!file) return;
+  try {
+    const head = new Uint8Array(await file.slice(0, 256).arrayBuffer());
+    const format = detectFormat(file.name, head);
+    if (!format) throw new Error(`Formato no reconocido: ${file.name}. Use DXF, SVG o una imagen (PNG/JPG).`);
+    let drawing;
+    if (format === 'dxf') drawing = importText('dxf', decodeDXF(new Uint8Array(await file.arrayBuffer())), file.name);
+    else if (format === 'svg') drawing = importText('svg', await file.text(), file.name);
+    else {
+      const url = URL.createObjectURL(file);
+      try {
+        drawing = await traceImageUrl(url, file.name, S.mmPerPx);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+    S.sampleId = null;
+    loadDrawing(drawing, null);
+  } catch (e) {
+    console.warn(e);
+    ui.toast(`No se pudo abrir ${file.name}: ${e.message || e}`, { type: 'error' });
+  }
+}
+
+async function loadSample(id) {
+  const s = SAMPLES.find((x) => x.id === id);
+  if (!s) return;
+  try {
+    let drawing;
+    if (s.format === 'image') {
+      if (s.suggested.mmPerPx) setPxScale(s.suggested.mmPerPx);
+      drawing = await traceImageUrl(s.content, s.fileName, S.mmPerPx);
+    } else drawing = importText(s.format, s.content, s.fileName);
+    S.sampleId = id;
+    loadDrawing(drawing, s.suggested);
+  } catch (e) {
+    console.warn(e);
+    ui.toast(`No se pudo cargar el ejemplo: ${e.message || e}`, { type: 'error' });
+  }
+}
+
+/** Decodifica una imagen (URL o data URL) a ImageData y la vectoriza. */
+async function traceImageUrl(url, fileName, mmPerPx) {
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const cv = document.createElement('canvas');
+  cv.width = img.naturalWidth;
+  cv.height = img.naturalHeight;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, cv.width, cv.height);
+  g.drawImage(img, 0, 0);
+  S.image = { data: g.getImageData(0, 0, cv.width, cv.height), fileName };
+  return traceStored(mmPerPx);
+}
+
+function traceStored(mmPerPx) {
+  const auto = $('chkThresholdAuto').checked;
+  const opts = { mmPerPx, fileName: S.image.fileName, invert: $('chkInvert').checked };
+  if (!auto) opts.threshold = Number($('rngThreshold').value);
+  const d = importImage(S.image.data, opts);
+  if (auto && d.threshold != null) {
+    ui.setRange($('rngThreshold'), d.threshold);
+    $('thresholdValue').textContent = String(Math.round(d.threshold));
+  }
+  return d;
+}
+
+function setPxScale(v) {
+  S.mmPerPx = v;
+  fields.pxScale.set(v);
+}
+
+/** Plano nuevo: perfil, op por defecto (+ sugerencia), paneles y generación. */
+function loadDrawing(drawing, suggested) {
+  S.drawing = drawing;
+  S.hiddenLayers = new Set();
+  S.selected = -1;
+  S.openRegions = new Set();
+  if (drawing.format !== 'image') S.image = null;
+  $('selDrawingUnits').value = 'auto';
+  $('chkIgnoreAux').checked = true;
+  measure.clear();
+  view2d.clearMeasures();
+  ui.setRange($('rngSection'), 0);
+  if (!computeProfile()) return;
+  let op = defaultOpState(S.profile);
+  op.thickness = fields.thickness.get();
+  if (suggested) {
+    op = applySuggested(op, suggested);
+    if (suggested.materialId) setMaterialId(suggested.materialId);
+  }
+  S.op = op;
+  ui.setFile({ name: drawing.fileName || 'plano', format: drawing.format === 'image' ? 'img' : drawing.format });
+  ui.setPlanoLoaded(true);
+  ui.setEmpty('2d', false);
+  if (!S.everBuilt) ui.setActiveTab('2d');
+  syncOpControls();
+  refresh2D(true);
+  renderAllPanels();
+  updateWarnings();
+  scheduleBuild(true);
+}
+
+/** Perfil con las opciones del paso 1; false si falla. */
+function computeProfile() {
+  const d = S.drawing;
+  const sel = $('selDrawingUnits').value;
+  try {
+    S.profile = prepareProfile(d, {
+      unitOverride: d.format === 'image' ? S.mmPerPx : sel,
+      ignoreDashed: $('chkIgnoreAux').checked,
+      hiddenLayers: [...S.hiddenLayers],
+      tol: fields.joinTol.get(),
+    });
+    return true;
+  } catch (e) {
+    ui.toast(e.message, { type: 'error' });
+    return false;
+  }
+}
+
+/** Cambió una opción del paso 1: rehace el perfil conservando la operación. */
+function reprocess(retrace = false) {
+  if (!S.drawing) return;
+  if (retrace && S.image) S.drawing = traceStored(S.mmPerPx);
+  if (!computeProfile()) return;
+  const old = S.op;
+  const op = defaultOpState(S.profile);
+  if (old) {
+    Object.assign(op, { mode: old.mode, thickness: old.thickness, symmetric: old.symmetric, fillets: old.fillets, multiview: old.multiview });
+    if (old.revolve.axisKind !== 'line') op.revolve = { ...old.revolve };
+    else op.revolve.angleDeg = old.revolve.angleDeg;
+  }
+  S.op = op;
+  S.selected = -1;
+  refresh2D(true);
+  renderAllPanels();
+  updateWarnings();
+  scheduleBuild();
+}
+
+// ───────────── Vista 2D ─────────────
+function refresh2D(full) {
+  const d = S.drawing, p = S.profile;
+  if (full) {
+    const k = p.toMM;
+    const m = [k, 0, 0, k, 0, 0];
+    const segments = k === 1 ? d.segments : d.segments.map((s) => segTransform(s, m));
+    const texts = k === 1 ? d.texts : (d.texts || []).map((t) => ({ ...t, p: [t.p[0] * k, t.p[1] * k], h: (t.h || 2.5) * k }));
+    view2d.setDrawing({ segments, texts, layers: d.layers }, { loops: p.loops, loopInfos: p.loopInfos, open: p.open, regions: p.regions });
+    for (const name of S.hiddenLayers) view2d.setLayerVisible(name, false);
+    // Si la vista estaba oculta (pestaña 3D) el ajuste se repite al mostrarla.
+    S.need2dFit = !$('view2d').clientWidth;
+  }
+  p.regions.forEach((_, i) => view2d.setRegionState(i, { included: S.op.regions[i].included, selected: i === S.selected }));
+  view2d.showAxis(S.op.mode === 'revolve' ? revolveAxisLine(S.op.revolve) : null);
+  view2d.showViewBoxes(S.op.mode === 'multiview' ? ROLES.filter((r) => S.op.multiview.windows[r]).map((role) => ({ role, box: S.op.multiview.windows[role] })) : []);
+}
+
+function revolveAxisLine(rv) {
+  if (rv.axisKind === 'y') return { p: [0, 0], d: [0, 1] };
+  if (rv.axisKind === 'line') return rv.axis;
+  return { p: [0, 0], d: [1, 0] };
+}
+
+function renderAllPanels() {
+  renderPlano(S.drawing, S.profile, { hiddenLayers: S.hiddenLayers, theme: ui.getTheme() });
+  renderRegions(S.profile, S.op, S.F, { selected: S.selected, open: S.openRegions });
+  renderSlots(S.op, S.F);
+}
+
+// ───────────── Operación ─────────────
+function editOp(fn, { regions = false } = {}) {
+  if (!S.op) return;
+  fn(S.op);
+  if (regions) renderRegions(S.profile, S.op, S.F, { selected: S.selected, open: S.openRegions });
+  refresh2D(false);
+  scheduleBuild();
+}
+
+function setThickness(v) {
+  setThicknessUi(v);
+  savePrefs();
+  editOp((op) => (op.thickness = v));
+}
+
+function setAngle(v) {
+  fields.angle.set(v);
+  ui.setRange($('rngAngle'), Math.round(v));
+  editOp((op) => (op.revolve = { ...op.revolve, angleDeg: v }));
+}
+
+function setRevolveAxis(axis) {
+  if (!S.op) return;
+  let rv;
+  if (axis === 'x') rv = { axisKind: 'x', axis: { p: [0, 0], d: [1, 0] } };
+  else if (axis === 'y') rv = { axisKind: 'y', axis: { p: [0, 0], d: [0, 1] } };
+  else {
+    const l = Math.hypot(axis.d[0], axis.d[1]) || 1;
+    rv = { axisKind: 'line', axis: { p: axis.p.slice(), d: [axis.d[0] / l, axis.d[1] / l] } };
+  }
+  S.op.revolve = { ...S.op.revolve, ...rv };
+  $('selAxis').value = rv.axisKind;
+  $('axisReadout').textContent = axisText(S.op.revolve);
+  editOp(() => {});
+}
+
+/** Hook: elegir el eje con un clic en una línea de la vista 2D. */
+function pickAxis() {
+  if (!S.profile) return;
+  ui.setActiveTab(ui.getActiveTab() === '3d' ? 'split' : ui.getActiveTab());
+  setMode2d('axis');
+}
+
+function setViewWindow(role, box) {
+  if (!S.op || !ROLES.includes(role)) return;
+  S.op.multiview = { ...S.op.multiview, windows: { ...S.op.multiview.windows, [role]: box ? { ...box } : null } };
+  renderSlots(S.op, S.F);
+  editOp(() => {});
+}
+
+function setImageScale(mmPerPx) {
+  if (!(mmPerPx > 0)) return;
+  setPxScale(mmPerPx);
+  if (S.drawing?.format === 'image') reprocess();
+}
+
+function syncOpControls() {
+  const op = S.op;
+  ui.setSegmented($('opSeg'), op.mode);
+  const b = $('opSeg').querySelector('[aria-pressed="true"]');
+  $('stepOpSummary').textContent = b ? b.textContent.trim() : '';
+  fields.thickness.set(op.thickness);
+  setThicknessUi(op.thickness);
+  $('chkSymmetric').checked = !!op.symmetric;
+  fields.fv.set(op.fillets.vertical || 0);
+  fields.ft.set(op.fillets.top || 0);
+  fields.ct.set(op.fillets.chamferTop || 0);
+  $('selAxis').value = op.revolve.axisKind;
+  $('axisReadout').textContent = axisText(op.revolve);
+  fields.angle.set(op.revolve.angleDeg ?? 360);
+  ui.setRange($('rngAngle'), Math.round(op.revolve.angleDeg ?? 360));
+}
+
+function setThicknessUi(v) {
+  $('selGauge').value = [...$('selGauge').options].some((o) => o.value && Number(o.value) === v) ? String(v) : '';
+  for (const c of $('thicknessChips').querySelectorAll('[data-value]')) c.setAttribute('aria-pressed', String(Number(c.dataset.value) === v));
+}
+
+function initOperation() {
+  ui.bindSegmented($('opSeg'), (mode) => {
+    editOp((op) => (op.mode = mode));
+    if (mode === 'multiview' && S.op && ROLES.filter((r) => S.op.multiview.windows[r]).length < 2) {
+      ui.setHint('Multivista: defina al menos dos ventanas de vista en el plano', '2d');
+    }
+  });
+  $('selGauge').addEventListener('change', (e) => {
+    if (!e.target.value) return;
+    fields.thickness.set(Number(e.target.value));
+    setThickness(fields.thickness.get());
+  });
+  $('thicknessChips').addEventListener('click', (e) => {
+    const c = e.target.closest('[data-value]');
+    if (!c) return;
+    fields.thickness.set(Number(c.dataset.value));
+    setThickness(fields.thickness.get());
+  });
+  $('chkSymmetric').addEventListener('change', (e) => editOp((op) => (op.symmetric = e.target.checked)));
+  $('rngAngle').addEventListener('input', (e) => setAngle(Number(e.target.value)));
+  $('selAxis').addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (v !== 'line') return setRevolveAxis(v);
+    const a = S.profile?.axisLines?.[0];
+    if (a) setRevolveAxis({ p: a.p0, d: [a.p1[0] - a.p0[0], a.p1[1] - a.p0[1]] });
+    else pickAxis();
+  });
+  $('btnPickAxis').addEventListener('click', pickAxis);
+
+  // Paso 1: unidades, tolerancia, trazos auxiliares, capas, imagen
+  $('selDrawingUnits').addEventListener('change', () => reprocess());
+  $('chkIgnoreAux').addEventListener('change', () => reprocess());
+  $('layerList').addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t.matches('[data-action="visible"]')) return;
+    const name = t.closest('[data-layer]').dataset.layer;
+    if (t.checked) S.hiddenLayers.delete(name);
+    else S.hiddenLayers.add(name);
+    reprocess();
+  });
+  $('rngThreshold').addEventListener('change', () => {
+    $('chkThresholdAuto').checked = false;
+    reprocess(true);
+  });
+  $('rngThreshold').addEventListener('input', (e) => ($('thresholdValue').textContent = e.target.value));
+  $('chkThresholdAuto').addEventListener('change', () => reprocess(true));
+  $('chkInvert').addEventListener('change', () => reprocess(true));
+
+  // Regiones (eventos delegados)
+  const list = $('regionList');
+  const parse = (s) => {
+    const v = Number(String(s).trim().replace(',', '.'));
+    return String(s).trim() === '' || !Number.isFinite(v) ? null : v;
+  };
+  list.addEventListener('change', (e) => {
+    const t = e.target;
+    const li = t.closest('[data-region]');
+    if (!li || !S.op) return;
+    const i = Number(li.dataset.region);
+    const rs = S.op.regions[i];
+    if (t.matches('[data-action="include"]')) {
+      rs.included = t.checked;
+      editOp(() => {});
+    } else if (t.dataset.field === 'height' || t.dataset.field === 'z0') {
+      const v = parse(t.value);
+      rs[t.dataset.field] = t.dataset.field === 'height' && v != null && v <= 0 ? null : v;
+      editOp(() => {});
+    } else if (t.closest('[data-hole]')) {
+      const hs = rs.holes[Number(t.closest('[data-hole]').dataset.hole)];
+      if (t.dataset.field === 'op') hs.op = t.value === 'fill' ? 'none' : t.value;
+      if (t.dataset.field === 'depth') {
+        const v = parse(t.value);
+        hs.depth = v != null && v > 0 ? v : null;
+      }
+      editOp(() => {});
+    }
+  });
+  list.addEventListener('click', (e) => {
+    const li = e.target.closest('[data-region]');
+    if (!li) return;
+    const i = Number(li.dataset.region);
+    if (e.target.closest('[data-action="toggle"]')) {
+      if (li.classList.contains('is-open')) S.openRegions.add(i);
+      else S.openRegions.delete(i);
+    }
+    if (!e.target.closest('input, select')) selectRegion(i);
+  });
+
+  // Ranuras de multivista: «Borrar»; «Definir» lo completa la parte 2 (modo ventana)
+  $('panelMultiview').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-action]');
+    const slot = b && b.closest('.slot[data-role]');
+    if (!slot) return;
+    if (b.dataset.action === 'clear') setViewWindow(slot.dataset.role, null);
+    else if (b.dataset.action === 'define' && S.profile) {
+      S.pendingWindowRole = slot.dataset.role;
+      setMode2d('window');
+    }
+  });
+
+  $('btnGenerate').addEventListener('click', () => runBuild());
+  ui.onShortcut('Enter', () => runBuild(), { ctrl: true });
+}
+
+function selectRegion(i) {
+  S.selected = i;
+  for (const li of $('regionList').querySelectorAll('[data-region]')) li.classList.toggle('is-selected', Number(li.dataset.region) === i);
+  if (S.profile) S.profile.regions.forEach((_, k) => view2d.setRegionState(k, { selected: k === i }));
+}
+
+// ───────────── Generación ─────────────
+function scheduleBuild(now = false) {
+  clearTimeout(autoTimer);
+  if (!S.profile) return;
+  if (now) {
+    runBuild();
+    return;
+  }
+  if (!$('chkAutoUpdate').checked) return;
+  autoTimer = setTimeout(() => runBuild(), AUTO_MS);
+}
+
+function setBusy(on) {
+  S.building = on;
+  const b = $('btnGenerate');
+  b.setAttribute('aria-busy', String(on));
+  b.classList.toggle('is-busy', on);
+}
+
+async function runBuild() {
+  clearTimeout(autoTimer);
+  if (!S.profile || !S.op) return;
+  if (!S.kernelReady) {
+    ui.setBuildInfo('Esperando al motor CAD…');
+    return;
+  }
+  let job;
+  const op = structuredClone(S.op);
+  const profile = S.profile;
+  try {
+    job = makeJob(profile, op, { meshQuality: 'normal' });
+  } catch (e) {
+    S.buildError = e.message;
+    updateWarnings();
+    ui.toast(e.message, { type: 'warn' });
+    return;
+  }
+  const seq = ++S.buildSeq;
+  setBusy(true);
+  const t0 = performance.now();
+  try {
+    const r = await kernel.build(job);
+    if (seq !== S.buildSeq) return;
+    S.build = r;
+    S.builtProfile = profile;
+    S.builtOp = op;
+    S.buildError = null;
+    S.buildWarnings = r.warnings || [];
+    viewer.setModel(r, appearance());
+    ui.setEmpty('3d', false);
+    if (!S.everBuilt) {
+      S.everBuilt = true;
+      if (ui.getActiveTab() === '2d') ui.setActiveTab('3d');
+      viewer.setView('iso');
+    }
+    recomputeProps();
+    const tm = r.timings || {};
+    const f = (x) => Math.round(x || 0);
+    ui.setBuildInfo(`Generado en ${f(performance.now() - t0)} ms · B-rep ${f(tm.buildMs)} · malla ${f(tm.meshMs)} · props ${f(tm.propsMs)} ms · ${kernel.mode === 'worker' ? 'worker' : 'hilo principal'}`);
+  } catch (e) {
+    if (seq !== S.buildSeq) return;
+    S.buildError = e.message || String(e);
+    ui.toast(`Error al generar la pieza: ${S.buildError}`, { type: 'error' });
+  } finally {
+    if (seq === S.buildSeq) {
+      setBusy(false);
+      updateWarnings();
+    }
+  }
+}
+
+function updateWarnings() {
+  const list = [];
+  if (S.buildError) list.push({ text: S.buildError, level: 'error' });
+  for (const w of S.drawing?.warnings || []) list.push({ text: w, level: 'info' });
+  for (const w of S.profile?.warnings || []) list.push({ text: w });
+  for (const w of S.op?.warnings || []) list.push({ text: w });
+  for (const w of S.buildError ? [] : S.buildWarnings) list.push({ text: w });
+  ui.setWarnings(list);
+}
+
+// ───────────── Vistas, unidades, tema ─────────────
+function setMode2d(mode) {
+  ui.setPressed($('toolbar2d'), 'mode2d', mode);
+  view2d.setMode(mode);
+  ui.setHint(HINTS_2D[mode] || '', '2d');
+}
+
+function updateSectionRange() {
+  if (!S.partData) return;
+  const ax = ui.getSegmented($('sectionAxisSeg')) || 'x';
+  const half = S.partData.bbox.size['xyz'.indexOf(ax)] / 2;
+  const r = $('rngSection');
+  r.min = String(-half);
+  r.max = String(half);
+  r.step = String(Math.max(half / 500, 1e-4));
+  const off = Math.max(-half, Math.min(half, Number(r.value) || 0));
+  ui.setRange(r, off);
+  $('sectionValue').textContent = S.F.len(off);
+  viewer.setSection({ axis: ax, offset: off });
+}
+
+function setUnits(v) {
+  S.F = makeFormatter(v === 'in' ? 'imperial' : 'metric');
+  view2d.setFormat(S.F.len);
+  viewer.setFormat(S.F);
+  measure.setFormat(S.F);
+  savePrefs();
+  if (S.profile) {
+    renderRegions(S.profile, S.op, S.F, { selected: S.selected, open: S.openRegions });
+    renderSlots(S.op, S.F);
+  }
+  if (S.build) recomputeProps();
+}
+
+function initViews() {
+  ui.bindSegmented($('unitsSeg'), setUnits);
+  ui.onTheme((name) => {
+    viewer.setTheme(name);
+    view2d.setTheme(name);
+    if (S.drawing) renderPlano(S.drawing, S.profile, { hiddenLayers: S.hiddenLayers, theme: name });
+  });
+  ui.onTab(() => requestAnimationFrame(() => {
+    view2d.resize();
+    viewer.resize();
+    if (S.need2dFit && $('view2d').clientWidth) {
+      S.need2dFit = false;
+      view2d.fit();
+    }
+  }));
+
+  // 2D
+  ui.bindPressGroup($('toolbar2d'), { attr: 'mode2d', mode: 'single' }, (m) => setMode2d(m));
+  $('btn2dFit').addEventListener('click', () => view2d.fit());
+  $('btn2dClearDims').addEventListener('click', () => view2d.clearMeasures());
+  view2d.on('regionClick', (e) => {
+    if (view2d.mode !== 'select' || !S.op) return;
+    if (e.regionIndex < 0) return selectRegion(-1);
+    const rs = S.op.regions[e.regionIndex];
+    rs.included = !rs.included;
+    S.selected = e.regionIndex;
+    editOp(() => {}, { regions: true });
+  });
+  view2d.on('axisPick', (e) => {
+    setRevolveAxis({ p: e.p, d: e.d });
+    setMode2d('select');
+  });
+  view2d.on('window', (box) => {
+    if (!S.pendingWindowRole) return;
+    setViewWindow(S.pendingWindowRole, box);
+    S.pendingWindowRole = null;
+    setMode2d('select');
+  });
+  view2d.on('cursor', (c) => {
+    if (!c) return ui.setCoords('');
+    const p = c.snap ? c.snap.p : [c.x, c.y];
+    ui.setCoords(`X ${S.F.len(p[0])}  Y ${S.F.len(p[1])}`);
+  });
+
+  // 3D
+  $('viewBar').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-view]');
+    if (!b) return;
+    if (b.dataset.view === 'fit') viewer.fit({ animate: true });
+    else viewer.setView(b.dataset.view, { animate: true });
+  });
+  ui.onProjection((m) => viewer.setProjection(m));
+  ui.bindPressGroup($('displayBar'), { attr: 'display', mode: 'multi' }, (k, on) => viewer.setDisplay({ [k]: on }));
+  ui.bindPressGroup($('toolPalette'), { attr: 'tool', mode: 'optional' }, (t) => {
+    measure.setTool(t || 'none');
+    if (!t) ui.setHint('', '3d');
+  });
+  $('btnClearMeasures').addEventListener('click', () => measure.clear());
+  viewer.on('cursor', (c) => {
+    if (c.point) ui.setCoords(S.F.point(c.point));
+  });
+  $('chkSection').addEventListener('change', (e) => {
+    viewer.setSection({ enabled: e.target.checked });
+    updateSectionRange();
+  });
+  ui.bindSegmented($('sectionAxisSeg'), () => {
+    ui.setRange($('rngSection'), 0);
+    updateSectionRange();
+  });
+  $('rngSection').addEventListener('input', (e) => {
+    const v = Number(e.target.value);
+    $('sectionValue').textContent = S.F.len(v);
+    viewer.setSection({ offset: v });
+  });
+  $('btnSectionFlip').addEventListener('click', () => viewer.setSection({ flip: !viewer.getSection().flip }));
+  viewer.setSection({ enabled: $('chkSection').checked, axis: ui.getSegmented($('sectionAxisSeg')) || 'x', offset: 0 });
+}

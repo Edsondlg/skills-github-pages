@@ -1,5 +1,5 @@
 // Operaciones sugeridas para los planos de ejemplo (objeto puro; lo usan samples.js y las pruebas).
-// Forma: { mode, thickness, materialId, revolve?, multiview?: { windows } }; se aplica con applySuggested.
+// Forma: { mode, thickness, materialId, mmPerPx? (solo imágenes), revolve?, multiview?: { windows } }; se aplica con applySuggested.
 // Medidas en mm, según scripts/make-samples-dxf.mjs.
 
 export const SAMPLE_SUGGESTIONS = {
@@ -25,4 +25,8 @@ export const SAMPLE_SUGGESTIONS = {
   'leva-spline': { mode: 'extrude', thickness: 12.7, materialId: 'al-6061-t6' },
   // Junta troquelada en aluminio blando (sella por deformación).
   'junta-arcos': { mode: 'extrude', thickness: 1.5, materialId: 'al-1100-h14' },
+  // Placa SVG en mm.
+  'placa-logo': { mode: 'extrude', thickness: 2, materialId: 'al-5052-h32' },
+  // Imagen: 1000 × 600 px a 0.15 mm/px → junta de 150 × 90 mm, de caucho.
+  'pieza-escaneada': { mode: 'extrude', thickness: 1.5, materialId: 'caucho', mmPerPx: 0.15 },
 };

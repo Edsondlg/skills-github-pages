@@ -584,6 +584,13 @@ export class Viewer3D {
     m.mat.needsUpdate = true;
   }
 
+  /** Cambia el formato de longitudes (etiquetas de la caja envolvente). */
+  setFormat(format) {
+    this.format = { ...DEFAULT_FORMAT, ...(format || {}) };
+    if (this._model) this._buildBBox();
+    this.requestRender();
+  }
+
   // ---------- visualización ----------
   setDisplay(d = {}) {
     Object.assign(this._display, d);

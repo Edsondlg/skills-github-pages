@@ -6,6 +6,8 @@ import ejePerfil from '../../samples/eje-perfil.dxf';
 import bloqueVistas from '../../samples/bloque-vistas.dxf';
 import levaSpline from '../../samples/leva-spline.dxf';
 import juntaArcos from '../../samples/junta-arcos.dxf';
+import placaLogo from '../../samples/placa-logo.svg';
+import piezaEscaneada from '../../samples/pieza-escaneada.png';
 import { SAMPLE_SUGGESTIONS } from './sample-suggestions.js';
 
 export { SAMPLE_SUGGESTIONS };
@@ -14,7 +16,7 @@ const S = (id, title, description, format, fileName, content) => ({ id, title, d
 
 /**
  * @type {Array<{id:string,title:string,description:string,format:'dxf'|'svg'|'image',fileName:string,
- *   content:string,suggested:{mode:string,thickness:number,materialId:string,revolve?:Object,multiview?:{windows:Object}}}>}
+ *   content:string,suggested:{mode:string,thickness:number,materialId:string,mmPerPx?:number,revolve?:Object,multiview?:{windows:Object}}}>}
  * content: texto (dxf/svg) o data URL (imagen).
  */
 export const SAMPLES = [
@@ -24,5 +26,6 @@ export const SAMPLES = [
   S('bloque-vistas', 'Bloque en L (vistas)', 'Vistas frontal, superior y lateral derecha (tercer ángulo) de un bloque en L con barreno Ø16; reconstrucción por vistas.', 'dxf', 'bloque-vistas.dxf', bloqueVistas),
   S('leva-spline', 'Leva (pulgadas)', 'Leva dibujada en pulgadas con contorno SPLINE, ranura elíptica y ventana hexagonal. Extrusión de 12.7 mm (½ in).', 'dxf', 'leva-spline.dxf', levaSpline),
   S('junta-arcos', 'Junta (solo líneas y arcos)', 'Junta con entidades desordenadas, una duplicada y un hueco de 0.0005 mm que se cierra solo. Extrusión de 1.5 mm.', 'dxf', 'junta-arcos.dxf', juntaArcos),
-  // Pendientes (otro módulo): placa-logo.svg (format 'svg') y pieza-escaneada.png (format 'image', content = data URL).
+  S('placa-logo', 'Placa con logo (SVG)', 'Placa 160×100 mm en SVG (mm) con recorte Bézier, ranuras, elipse y 4 barrenos Ø7. Extrusión de 2 mm.', 'svg', 'placa-logo.svg', placaLogo),
+  S('pieza-escaneada', 'Junta escaneada (imagen)', 'Imagen 1200×800 px de una junta 1000×600 px con barrenos Ø80/Ø60/Ø60 y ranura; a 0.15 mm/px mide 150×90 mm. Extrusión de 1.5 mm.', 'image', 'pieza-escaneada.png', piezaEscaneada),
 ];
