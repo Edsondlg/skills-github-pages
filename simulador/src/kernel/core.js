@@ -6,6 +6,7 @@ import { segInvalidReason } from '../geom2d/segments.js';
 
 let oc = null;
 let current = null; // { shape, faces: Map, edges: Map, vertices: Map }
+let currentId = null; // buildId del trabajo que generó `current` (lo asigna la interfaz)
 
 const TAU = Math.PI * 2;
 // Integración de Gauss de OCCT: exacta en geometría analítica y polinómica. Las splines
@@ -1078,6 +1079,7 @@ export function build(job) {
   // La pieza anterior se libera solo cuando la nueva es utilizable.
   releaseCurrent();
   current = { shape, ...walk.maps, owned: walk.owned, bbox: props.bbox };
+  currentId = job.buildId ?? null;
   const topo = walk.topo;
   const t2 = now();
   const mo = meshOpts(job.mesh, props.bbox);
@@ -1090,9 +1092,16 @@ export function build(job) {
   return { mesh, edges, topology: topo, props, warnings, timings: { buildMs, meshMs: t3 - t2, propsMs: t2 - t1 } };
 }
 
-function needShape() {
+// buildId opcional: si no coincide con la pieza actual del motor, error STALE_SHAPE
+// (la comprobación y el uso de la forma ocurren en la misma llamada serializada).
+function needShape(buildId) {
   needOC();
   if (!current) throw new Error('No hay ninguna pieza construida.');
+  if (buildId != null && buildId !== currentId) {
+    const err = new Error('La pieza del motor CAD no corresponde a la mostrada; vuelva a generarla.');
+    err.code = 'STALE_SHAPE';
+    throw err;
+  }
 }
 
 function resolveEntity(x) {
@@ -1111,8 +1120,8 @@ function resolveEntity(x) {
   return { shape: s.wrapped || s, owned: false };
 }
 
-export function distance(a, b) {
-  needShape();
+export function distance(a, b, buildId) {
+  needShape(buildId);
   const A = resolveEntity(a), B = resolveEntity(b);
   const ds = new oc.BRepExtrema_DistShapeShape(A.shape, B.shape);
   try {
@@ -1135,7 +1144,7 @@ function readFS(path, asText) {
 }
 
 export function exportShape(opts = {}) {
-  needShape();
+  needShape(opts.buildId);
   const format = opts.format || 'step';
   const shape = current.shape;
   if (format === 'step') {
@@ -1180,7 +1189,7 @@ export function exportShape(opts = {}) {
 }
 
 export function tessellate(opts = {}) {
-  needShape();
+  needShape(opts.buildId);
   // Sin tolerancia explícita se escala con la pieza, como la malla de visualización.
   return meshShape(current.shape, meshOpts(opts, current.bbox));
 }
@@ -1190,7 +1199,7 @@ export async function handle({ type, payload } = {}) {
     switch (type) {
       case 'init': return await init(payload || {});
       case 'build': return build(payload);
-      case 'distance': return distance(payload.a, payload.b);
+      case 'distance': return distance(payload.a, payload.b, payload.buildId);
       case 'export': return exportShape(payload || {});
       case 'tessellate': return tessellate(payload || {});
       default: throw new Error(`Mensaje desconocido para el motor CAD: ${type}`);

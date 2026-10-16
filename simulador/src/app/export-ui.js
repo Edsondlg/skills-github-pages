@@ -19,27 +19,26 @@ export function initExportUi(app) {
   let busy = false;
 
   async function run(kind) {
-    const s = app.getState();
-    if (s.building) return ui.toast('Espere a que termine la generación de la pieza antes de exportar.', { type: 'warn' });
-    if (!s.build || !s.partData) {
-      const msg = s.drawing
-        ? 'Aún no hay pieza 3D: pulse «Generar pieza 3D» (Ctrl+Enter) y vuelva a exportar.'
-        : 'No hay pieza que exportar: abra un plano o un ejemplo y genere la pieza 3D.';
-      return ui.toast(msg, { type: 'warn' });
-    }
+    if (!app.getState().drawing) return ui.toast('No hay pieza que exportar: abra un plano o un ejemplo y genere la pieza 3D.', { type: 'warn' });
     if (busy) return ui.toast('Ya hay una exportación en curso…', { type: 'info' });
     busy = true;
     btn.setAttribute('aria-busy', 'true');
     btn.classList.add('is-busy');
     const closeWait = ui.toast(`Exportando ${LABELS[kind] || kind}…`, { timeout: 0 });
     try {
+      // Lo exportado debe corresponder a las entradas actuales: se confirma el campo en edición
+      // y se genera lo pendiente; si no se puede, se rechaza con el motivo.
+      const why = await app.prepareExport();
+      const s = app.getState();
+      if (why) return ui.toast(`No se puede exportar ${LABELS[kind] || kind}: ${why}`, { type: 'warn' });
+      if (!s.build || !s.partData) return ui.toast('Aún no hay pieza 3D: pulse «Generar pieza 3D» (Ctrl+Enter) y vuelva a exportar.', { type: 'warn' });
       // La captura (PNG y reporte) necesita la vista 3D visible y con tamaño.
       if (/^(png|report)/.test(kind) && ui.getActiveTab() === '2d') {
         ui.setActiveTab('3d');
         await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
       }
       const opts = {
-        kernel: app.kernel, viewer: app.viewer, partData: s.partData,
+        kernel: app.ensureKernelShape(), viewer: app.viewer, partData: s.partData,
         measurements: app.getMeasurements ? app.getMeasurements() : app.measure.list(),
         fileBase: fileBaseOf(s.drawing), fileName: s.drawing?.fileName, system: s.system,
       };

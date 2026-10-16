@@ -3,7 +3,8 @@
 
 /**
  * @param {Object} ctx  { S, kernel, viewer, measure, view2d, actions }
- *   actions: { setViewWindow, setRevolveAxis, setImageScale, rebuild, pickAxis, loadSample, openFiles, setMode2d, setFrameLoops }
+ *   actions: { setViewWindow, setRevolveAxis, setImageScale, rebuild, pickAxis, loadSample, openFiles, setMode2d, setFrameLoops,
+ *              prepareExport, ensureKernelShape }
  * @returns {Object} appApi
  */
 export function createAppApi(ctx) {
@@ -21,6 +22,7 @@ export function createAppApi(ctx) {
     getState: () => ({
       drawing: S.drawing, profile: S.profile, op: S.op, build: S.build, partData: S.partData,
       material: S.material, formatter: S.F, system: S.F.system, sampleId: S.sampleId, building: S.building,
+      appliedJob: S.appliedJob, dirty: S.dirty, buildError: S.buildError,
     }),
     /** cb(partData, build) tras cada generación y cada recálculo de propiedades. */
     onBuilt: (cb) => (built.add(cb), () => built.delete(cb)),
@@ -44,6 +46,10 @@ export function createAppApi(ctx) {
     setMode2d: (mode) => actions.setMode2d(mode),
     /** Marco del plano: null = detección automática (excluido); [] = incluido en el modelo. */
     setFrameLoops: (v) => actions.setFrameLoops(v),
+    /** Confirma el campo en edición y genera si hay cambios: null o el motivo para no exportar. */
+    prepareExport: () => actions.prepareExport(),
+    /** Motor ligado a la pieza aplicada ({ distance, exportShape, tessellate } con su buildId). */
+    ensureKernelShape: () => actions.ensureKernelShape(),
     loadSample: (id) => actions.loadSample(id),
     openFiles: (files) => actions.openFiles(files),
     _emitBuilt: () => { for (const cb of built) cb(S.partData, S.build); },

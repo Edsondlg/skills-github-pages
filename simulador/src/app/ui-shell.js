@@ -35,7 +35,7 @@
  *       #sectionBar #chkSection #sectionAxisSeg (x|y|z) #rngSection #sectionValue #btnSectionFlip
  *       #hint3d #empty3d #btnEmptyOpen
  * Panel derecho
- *   #sidebarRight #btnCloseRight #propsSubtitle #propsEmpty #propsBody
+ *   #sidebarRight #btnCloseRight #propsSubtitle #propsStale (aviso: pieza desactualizada) #propsEmpty #propsBody
  *   #kpiMass #kpiMassSub #kpiVolume #kpiVolumeSub #kpiArea #kpiAreaSub #kpiDims #kpiDimsSub
  *   #propMaterial #propBBox #propCOM #inertiaUnit #inertiaTensor #propInertia #propSheet #propProfile
  *   #holesTable #topoBadges #propTopology #accuracyBadge #propAccuracy #propCost

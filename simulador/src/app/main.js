@@ -37,6 +37,9 @@ const S = {
   hiddenLayers: new Set(), selected: -1, openRegions: new Set(),
   image: null, mmPerPx: 0.25, buildSeq: 0, building: false, everBuilt: false, kernelReady: false,
   buildWarnings: [], buildError: null,
+  // Coherencia: appliedJob = trabajo exacto (con buildId) de la pieza mostrada; inputVer cuenta las
+  // ediciones de geometría; dirty = las entradas cambiaron desde la última pieza aplicada.
+  appliedJob: null, inputVer: 0, dirty: false, errorVer: -1, // errorVer: entradas en las que falló buildError
 };
 
 function loadPrefs() {
@@ -61,6 +64,7 @@ function savePrefs() {
 let kernel, viewer, measure, view2d, api;
 const fields = {};
 let autoTimer = 0;
+let inflight = null; // { ver, promise } de la generación en curso
 
 // ───────────── Arranque ─────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -79,13 +83,13 @@ document.addEventListener('DOMContentLoaded', () => {
   viewer = new Viewer3D($('view3d'), { theme, format: S.F });
   kernel = new KernelClient();
   measure = new MeasureTools(viewer, {
-    kernel, format: S.F,
+    kernel: ensureKernelShape(), format: S.F,
     onChange: (list, extra) => {
       if (getTab3d()) ui.setHint(extra.hint || '', '3d');
       api?._emitMeasure(list, extra);
     },
   });
-  api = createAppApi({ S, kernel, viewer, measure, view2d, actions: { setViewWindow, setRevolveAxis, setImageScale, rebuild: runBuild, pickAxis, loadSample, openFiles, setMode2d, setFrameLoops } });
+  api = createAppApi({ S, kernel, viewer, measure, view2d, actions: { setViewWindow, setRevolveAxis, setImageScale, rebuild: runBuild, pickAxis, loadSample, openFiles, setMode2d, setFrameLoops, prepareExport, ensureKernelShape } });
   window.__app = api;
 
   initFields(prefs);
@@ -295,7 +299,12 @@ function loadDrawing(drawing, suggested) {
   measure.clear();
   view2d.clearMeasures();
   ui.setRange($('rngSection'), 0);
-  if (!computeProfile()) return;
+  clearPart();
+  if (!computeProfile()) {
+    S.profile = null; // sin perfil válido no se genera (ni se exporta) nada del plano anterior
+    updateWarnings();
+    return;
+  }
   let op = defaultOpState(S.profile);
   op.thickness = fields.thickness.get();
   if (suggested) {
@@ -313,6 +322,21 @@ function loadDrawing(drawing, suggested) {
   updateWarnings();
   api._emitProfile(true);
   scheduleBuild(true);
+}
+
+/** Plano nuevo: descarta la pieza anterior (datos, vista 3D, propiedades) e invalida su generación. */
+function clearPart() {
+  ++S.buildSeq;
+  setBusy(false);
+  Object.assign(S, { build: null, partData: null, appliedJob: null, builtProfile: null, builtOp: null, buildError: null, buildWarnings: [], dirty: true });
+  S.inputVer++;
+  viewer.clearModel();
+  ui.setEmpty('3d', true);
+  ui.setPropsVisible(false);
+  $('propsSubtitle').textContent = 'Genera una pieza para ver sus datos';
+  $('viewInfo').textContent = '';
+  ui.setBuildInfo('');
+  updateStale();
 }
 
 /** Perfil con las opciones del paso 1; false si falla. */
@@ -571,6 +595,10 @@ function selectRegion(i) {
 // ───────────── Generación ─────────────
 function scheduleBuild(now = false) {
   clearTimeout(autoTimer);
+  // Toda edición que programa una generación deja la pieza mostrada desactualizada.
+  S.inputVer++;
+  S.dirty = true;
+  updateStale();
   if (!S.profile) return;
   if (now) {
     runBuild();
@@ -587,6 +615,7 @@ function setBusy(on) {
   const b = $('btnGenerate');
   b.setAttribute('aria-busy', String(on));
   b.classList.toggle('is-busy', on);
+  updateStale();
 }
 
 async function runBuild() {
@@ -599,21 +628,36 @@ async function runBuild() {
   let job;
   const op = structuredClone(S.op);
   const profile = S.profile;
+  const ver = S.inputVer;
   try {
     job = makeJob(profile, op, { meshQuality: 'normal' });
   } catch (e) {
+    // Invalida cualquier generación en curso: ya no corresponde a las entradas.
+    ++S.buildSeq;
+    inflight = null;
+    setBusy(false);
     S.buildError = e.message;
+    S.errorVer = ver;
     updateWarnings();
     ui.toast(e.message, { type: 'warn' });
     return;
   }
   const seq = ++S.buildSeq;
+  job.buildId = seq;
   setBusy(true);
   const t0 = performance.now();
+  const promise = buildAndApply(job, seq, ver, profile, op, t0);
+  inflight = { ver, promise };
+  return promise;
+}
+
+async function buildAndApply(job, seq, ver, profile, op, t0) {
   try {
     const r = await kernel.build(job);
     if (seq !== S.buildSeq) return;
     S.build = r;
+    S.appliedJob = job;
+    S.dirty = ver !== S.inputVer;
     S.builtProfile = profile;
     S.builtOp = op;
     S.buildError = null;
@@ -632,13 +676,86 @@ async function runBuild() {
   } catch (e) {
     if (seq !== S.buildSeq) return;
     S.buildError = e.message || String(e);
+    S.errorVer = ver;
     ui.toast(`Error al generar la pieza: ${S.buildError}`, { type: 'error' });
   } finally {
     if (seq === S.buildSeq) {
+      inflight = null;
       setBusy(false);
       updateWarnings();
     }
   }
+}
+
+// Aviso en la cabecera de propiedades cuando la pieza mostrada no corresponde a las entradas.
+function updateStale() {
+  const el = $('propsStale');
+  let text = '', state = '';
+  if (S.building) [text, state] = ['Actualizando…', 'busy'];
+  else if (S.dirty && S.buildError && S.errorVer === S.inputVer) [text, state] = [`No se pudo generar: ${S.buildError}`, 'error'];
+  else if (S.dirty && S.profile) {
+    const mvShort = S.op?.mode === 'multiview' && ROLES.filter((r) => S.op.multiview.windows[r]).length < 2;
+    [text, state] = [mvShort ? 'Multivista: defina al menos dos vistas y pulsa Generar' : 'Cambios sin aplicar — pulsa Generar', 'dirty'];
+  }
+  el.hidden = !text;
+  el.textContent = text;
+  el.dataset.state = state;
+  $('propsBody').classList.toggle('is-stale', !!text);
+}
+
+/**
+ * Antes de exportar: confirma el campo en edición (los atajos Ctrl ignoran el foco) y genera
+ * la pieza si hay cambios pendientes. Devuelve null si la pieza aplicada corresponde a las
+ * entradas actuales o, si no, el motivo (texto) para rechazar la exportación.
+ */
+async function prepareExport() {
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur();
+  if (S.dirty || S.building) {
+    if (inflight && inflight.ver === S.inputVer) await inflight.promise;
+    else await runBuild();
+  }
+  if (!S.dirty) return null;
+  if (!S.kernelReady) return 'el motor CAD aún no está listo';
+  if (!S.profile) return 'el plano no tiene un perfil válido';
+  return (S.errorVer === S.inputVer && S.buildError) || 'hay cambios sin generar';
+}
+
+// Llamada al motor sobre la pieza aplicada: si el motor tiene otra forma (STALE_SHAPE), la
+// regenera en silencio con el mismo trabajo (mismo buildId) y reintenta una vez.
+async function withAppliedShape(fn) {
+  const job = S.appliedJob;
+  if (!job) throw new Error('No hay pieza generada.');
+  try {
+    return await fn(job.buildId);
+  } catch (e) {
+    if (e?.code !== 'STALE_SHAPE' || S.appliedJob !== job) throw e;
+    const r = await kernel.build(job);
+    // Los ids de topología (hash de OCCT) cambian al regenerar; el orden de recorrido no.
+    const map = new Map();
+    for (const [k, key] of [['face', 'faces'], ['edge', 'edges'], ['vertex', 'vertices']]) {
+      (S.build?.topology?.[key] || []).forEach((x, i) => {
+        const n = r.topology[key][i];
+        if (n) map.set(`${k}:${x.id}`, n.id);
+      });
+    }
+    idRemap = { job, map };
+    return fn(job.buildId);
+  }
+}
+
+// Entidad de la pieza mostrada → id en el motor (tras una regeneración silenciosa).
+let idRemap = null; // { job, map: Map('face:id' → id) }
+const engineRef = (e) => (e && e.id != null && idRemap?.job === S.appliedJob ? { ...e, id: idRemap.map.get(`${e.kind}:${e.id}`) ?? e.id } : e);
+
+/** Motor ligado a la pieza aplicada (exportaciones y mediciones 3D): nunca usa otra forma. */
+function ensureKernelShape() {
+  return {
+    get mode() { return kernel.mode; },
+    distance: (a, b) => withAppliedShape((id) => kernel.distance(engineRef(a), engineRef(b), id)),
+    exportShape: (o = {}) => withAppliedShape((id) => kernel.exportShape({ ...o, buildId: id })),
+    tessellate: (o = {}) => withAppliedShape((id) => kernel.tessellate({ ...o, buildId: id })),
+  };
 }
 
 function updateWarnings() {
@@ -649,6 +766,7 @@ function updateWarnings() {
   for (const w of S.op?.warnings || []) list.push({ text: w });
   for (const w of S.buildError ? [] : S.buildWarnings) list.push({ text: w });
   ui.setWarnings(list);
+  updateStale();
 }
 
 // ───────────── Vistas, unidades, tema ─────────────

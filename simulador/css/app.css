@@ -834,3 +834,9 @@ input[type="checkbox"].chk:checked::after, .check input[type="checkbox"]:checked
   .section-bar .range { flex: 1 1 60px; }
   .hint-pill { bottom: 92px; }
 }
+
+/* Aviso de pieza desactualizada (cambios sin aplicar, generando o error) y KPIs atenuados */
+.props-stale { margin: 6px 0 0; padding: 4px 8px; border-radius: 6px; font-size: 12px; line-height: 1.35; color: var(--warning); background: var(--warning-soft); }
+.props-stale[data-state="busy"] { color: var(--accent); background: var(--accent-soft); }
+.props-stale[data-state="error"] { color: var(--danger); background: var(--danger-soft); }
+.props-body.is-stale .kpi-grid { opacity: 0.5; transition: opacity 0.15s; }

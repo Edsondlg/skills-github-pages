@@ -74,11 +74,14 @@ export class KernelClient {
     });
   }
 
-  _settle({ id, ok, result, error }) {
+  _settle({ id, ok, result, error, code }) {
     const p = this._pending.get(id);
     if (!p) return;
     this._pending.delete(id);
-    if (ok) p.resolve(result); else p.reject(new Error(error));
+    if (ok) return p.resolve(result);
+    const err = new Error(error);
+    if (code) err.code = code; // p. ej. STALE_SHAPE
+    p.reject(err);
   }
 
   _failAll(err) {
@@ -113,7 +116,8 @@ export class KernelClient {
   }
 
   build(job) { return this.call('build', job); }
-  distance(a, b) { return this.call('distance', { a, b }); }
+  /** buildId opcional: rechaza con code 'STALE_SHAPE' si el motor tiene otra pieza. */
+  distance(a, b, buildId) { return this.call('distance', { a, b, buildId }); }
   exportShape(opts) { return this.call('export', opts); }
   tessellate(opts) { return this.call('tessellate', opts); }
 

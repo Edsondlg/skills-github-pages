@@ -21,7 +21,7 @@ if (inWorker) {
       const result = await handle({ type, payload });
       self.postMessage({ id, ok: true, result }, [...collectTransfers(result)]);
     } catch (err) {
-      self.postMessage({ id, ok: false, error: (err && err.message) || String(err) });
+      self.postMessage({ id, ok: false, error: (err && err.message) || String(err), code: err && err.code });
     }
   };
 } else {
