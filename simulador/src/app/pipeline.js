@@ -185,7 +185,7 @@ export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = 
   if (Array.isArray(frameLoops)) frame = [...new Set(frameLoops)].filter((i) => Number.isInteger(i) && i >= 0 && i < L.loops.length).sort((a, b) => a - b);
   else if (detectFrame) {
     frame = detectFrameLoops(L.loops, loopInfos, buildRegions(L.loops, { chordTol }).nodes, tol);
-    if (frame.length) warnings.push('Se detectó el marco del plano y se excluyó del modelo (haz clic en él para incluirlo).');
+    if (frame.length) warnings.push('Se detectó el marco del plano y se excluyó del modelo (actívalo con «Incluir marco en el modelo» en el paso 1).');
   } else frame = [];
   // Anotaciones: círculo exterior de pares concéntricos (se anida sin el marco).
   const fr = new Set(frame);

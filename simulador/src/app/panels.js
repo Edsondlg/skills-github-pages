@@ -17,6 +17,8 @@ export function splitUnit(s) {
 }
 const num = (F, mm) => splitUnit(F.len(mm))[0];
 const lenUnit = (F) => (F.system === 'imperial' ? 'in' : 'mm');
+// Número corto para espacios estrechos: hasta 2 decimales (3 en pulgadas), sin ceros finales.
+const compact = (F, mm) => String(Number((F.system === 'imperial' ? mm / 25.4 : mm).toFixed(F.system === 'imperial' ? 3 : 2)));
 const group = (v, d) => v.toLocaleString('es-MX', { minimumFractionDigits: d, maximumFractionDigits: d });
 
 function kpi(id, text, sub) {
@@ -105,7 +107,7 @@ export function renderSlots(op, F) {
     const w = op.multiview?.windows?.[role];
     const st = $(id).querySelector('.slot-status');
     st.dataset.state = w ? 'set' : 'empty';
-    st.textContent = w ? `${num(F, Math.abs(w.maxX - w.minX))} × ${num(F, Math.abs(w.maxY - w.minY))} ${lenUnit(F)}` : 'sin definir';
+    st.textContent = w ? `${compact(F, Math.abs(w.maxX - w.minX))} × ${compact(F, Math.abs(w.maxY - w.minY))} ${lenUnit(F)}` : 'sin definir';
   }
 }
 

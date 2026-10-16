@@ -472,7 +472,7 @@ input[type="checkbox"].chk:checked::after, .check input[type="checkbox"]:checked
 /* Multivista */
 .slot-list { gap: 6px; }
 .slot {
-  display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name btn clear" "status btn clear";
+  display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name name name" "status btn clear";
   align-items: center; column-gap: 6px; row-gap: 1px; padding: 7px 6px 7px 10px;
   border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--raised);
 }

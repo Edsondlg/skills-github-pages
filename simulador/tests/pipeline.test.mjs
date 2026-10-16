@@ -181,7 +181,7 @@ const synthetic = () => ({
   texts: [], warnings: [], stats: {},
 });
 
-const FRAME_WARN = 'Se detectó el marco del plano y se excluyó del modelo (haz clic en él para incluirlo).';
+const FRAME_WARN = 'Se detectó el marco del plano y se excluyó del modelo (actívalo con «Incluir marco en el modelo» en el paso 1).';
 
 test('marco del plano: se excluye y se avisa; capas congeladas/ocultas se descartan', () => {
   const profile = prepareProfile(synthetic());
