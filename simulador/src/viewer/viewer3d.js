@@ -24,7 +24,7 @@ export const DEFAULT_FORMAT = {
 
 export const THEMES = {
   dark: {
-    bgTop: '#4b525c', bgBottom: '#16191d', edge: '#dfe5ec', grid: '#7d8792', gridMajor: '#a3adb8',
+    bgTop: '#4b525c', bgBottom: '#16191d', edge: '#14181d', grid: '#7d8792', gridMajor: '#a3adb8',
     hemiSky: '#e8eef5', hemiGround: '#2a2622', hover: '#3ea6ff', select: '#ff9d2e', measure: '#ffc94a',
     section: '#c45a3c', bbox: '#9fc2e6', wire: '#a9b4bf', labelBg: 'rgba(22,25,30,0.88)', labelFg: '#f3f6f9',
   },
@@ -35,7 +35,7 @@ export const THEMES = {
   },
 };
 
-const DEFAULT_APPEARANCE = { color: '#b9c0c8', metalness: 0.55, roughness: 0.36, opacity: 1 };
+const DEFAULT_APPEARANCE = { color: '#a9b1ba', metalness: 0.6, roughness: 0.4, opacity: 1 };
 
 // Direcciones (cámara → desde) de las vistas estándar; Z arriba. Frente = desde −Y, derecha = desde +X.
 const VIEW_DIRS = {
@@ -144,7 +144,7 @@ export class Viewer3D {
     if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
     container.classList.add('v3d-root', `v3d-theme-${this.themeName}`);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, stencil: true, preserveDrawingBuffer: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.NeutralToneMapping;
@@ -168,10 +168,10 @@ export class Viewer3D {
     room.dispose();
     pmrem.dispose();
     scene.environment = this._envTex;
-    scene.environmentIntensity = 0.85;
+    scene.environmentIntensity = 0.6;
 
     // Luz suave hemisférica (Z arriba) + luz principal y de relleno que siguen a la cámara.
-    this._hemi = new THREE.HemisphereLight(this.theme.hemiSky, this.theme.hemiGround, 0.9);
+    this._hemi = new THREE.HemisphereLight(this.theme.hemiSky, this.theme.hemiGround, 0.45);
     this._hemi.position.set(0, 0, 1);
     this._key = new THREE.DirectionalLight('#ffffff', 1.5);
     this._fill = new THREE.DirectionalLight('#ffffff', 0.35);
@@ -200,9 +200,11 @@ export class Viewer3D {
     this.controls = controls;
 
     this.viewHelper = new ViewHelper(this._persp, renderer.domElement);
+    this.viewHelper.setLabelStyle('bold 26px system-ui, sans-serif', '#101317', 18);
     this.viewHelper.setLabels('X', 'Y', 'Z');
     this._gizmoCam = new THREE.OrthographicCamera(-2, 2, 2, -2, 0, 4);
     this._gizmoCam.position.set(0, 0, 2);
+    this._gizmoCam.updateMatrixWorld();
 
     this._modelGroup = new THREE.Group();
     this._helperGroup = new THREE.Group();
@@ -389,10 +391,10 @@ export class Viewer3D {
       m.edgeMat.color.set(this.theme.edge);
       m.capMat.color.set(this.theme.section);
       m.wire.material.color.set(this.theme.wire);
-      m.hoverFace.material.color.set(this.theme.hover);
+      m.hoverFace.material[0].color.set(this.theme.hover);
       m.hoverEdge.material.color.set(this.theme.hover);
       m.hoverPts.material.color.set(this.theme.hover);
-      m.selFace.material.color.set(this.theme.select);
+      m.selFace.material[0].color.set(this.theme.select);
       m.selEdge.material.color.set(this.theme.select);
       m.selPts.material.color.set(this.theme.select);
       this._buildGrid();
@@ -432,13 +434,33 @@ export class Viewer3D {
     mesh.name = 'pieza';
     this._clippable.add(mat);
 
-    // Tapa de sección: caras traseras en color de sección, recortadas por el mismo plano.
-    const capMat = new THREE.MeshBasicMaterial({
-      color: this.theme.section, side: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
+    // Tapa de sección por estencil: las caras traseras suman y las delanteras restan; el plano de corte
+    // se pinta solo donde el contador ≠ 0 (interior del sólido) y escribe profundidad, así oculta lo de atrás.
+    const stencilMat = (side, op) => {
+      const mt = new THREE.MeshBasicMaterial({
+        side, depthWrite: false, depthTest: false, colorWrite: false, stencilWrite: true,
+        stencilFunc: THREE.AlwaysStencilFunc, stencilFail: op, stencilZFail: op, stencilZPass: op,
+      });
+      this._clippable.add(mt);
+      return mt;
+    };
+    const cap = new THREE.Group();
+    for (const [side, op] of [[THREE.BackSide, THREE.IncrementWrapStencilOp], [THREE.FrontSide, THREE.DecrementWrapStencilOp]]) {
+      const st = new THREE.Mesh(geom, stencilMat(side, op));
+      st.renderOrder = 1;
+      cap.add(st);
+    }
+    const capMat = new THREE.MeshStandardMaterial({
+      color: this.theme.section, metalness: 0.05, roughness: 0.85, side: THREE.DoubleSide,
+      stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc,
+      stencilFail: THREE.ReplaceStencilOp, stencilZFail: THREE.ReplaceStencilOp, stencilZPass: THREE.ReplaceStencilOp,
     });
-    const cap = new THREE.Mesh(geom, capMat);
+    const capPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), capMat);
+    capPlane.scale.setScalar(sphere.radius * 2.4);
+    capPlane.renderOrder = 2;
+    capPlane.onAfterRender = (r) => r.clearStencil();
+    cap.add(capPlane);
     cap.visible = false;
-    this._clippable.add(capMat);
 
     const wire = new THREE.LineSegments(
       new THREE.WireframeGeometry(geom),
@@ -470,7 +492,7 @@ export class Viewer3D {
     const vertices = topo.vertices.map((v) => ({ id: v.id, p: v3(v.p) }));
 
     this._model = {
-      result, geom, mesh, mat, cap, capMat, wire, edgeLines, edgeMat, edgePos: ePos, box, sphere,
+      result, geom, mesh, mat, cap, capPlane, capMat, wire, edgeLines, edgeMat, edgePos: ePos, box, sphere,
       faceById, edgeById, faceGroups, faceRange, vertices,
     };
     this._buildHighlightObjects();
@@ -495,6 +517,7 @@ export class Viewer3D {
       o.traverse((c) => {
         if (c.geometry && c.geometry !== m.geom) c.geometry.dispose();
         if (c.material) (Array.isArray(c.material) ? c.material : [c.material]).forEach((mt) => this._disposeMaterial(mt));
+        if (c.isCSS2DObject) c.element.remove();
       });
     };
     for (const g of [this._modelGroup, this._overlayGroup, this._helperGroup]) {
@@ -616,15 +639,36 @@ export class Viewer3D {
       const dst = isMajor ? majorPts : minorPts;
       dst.push(cx + t, cy - half, z, cx + t, cy + half, z, cx - half, cy + t, z, cx + half, cy + t, z);
     }
+    // Cada línea se subdivide para desvanecerla hacia el borde (alfa por vértice).
+    const SUB = 16;
     const mk = (pts, color, opacity) => {
+      const c = new THREE.Color(color);
+      const pos = [];
+      const col = [];
+      const alpha = (x, y) => {
+        const r = Math.hypot(x - cx, y - cy) / half;
+        const k = Math.min(1, Math.max(0, (r - 0.45) / 0.55));
+        return opacity * (1 - k * k * (3 - 2 * k));
+      };
+      for (let i = 0; i < pts.length; i += 6) {
+        for (let j = 0; j < SUB; j++) {
+          for (const t of [j / SUB, (j + 1) / SUB]) {
+            const x = pts[i] + (pts[i + 3] - pts[i]) * t;
+            const y = pts[i + 1] + (pts[i + 4] - pts[i + 1]) * t;
+            pos.push(x, y, z);
+            col.push(c.r, c.g, c.b, alpha(x, y));
+          }
+        }
+      }
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-      const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+      const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }));
       l.renderOrder = -1;
       return l;
     };
     const grid = new THREE.Group();
-    grid.add(mk(minorPts, this.theme.grid, 0.22), mk(majorPts, this.theme.gridMajor, 0.5));
+    grid.add(mk(minorPts, this.theme.grid, 0.16), mk(majorPts, this.theme.gridMajor, 0.38));
     grid.userData.halfDiag = Math.hypot(half, half) + Math.hypot(cx - m.sphere.center.x, cy - m.sphere.center.y);
     grid.userData.step = { major, minor };
     grid.visible = this._display.grid;
@@ -635,9 +679,11 @@ export class Viewer3D {
   _buildBBox() {
     if (this._bboxGroup) {
       this._helperGroup.remove(this._bboxGroup);
+      // 'removed' solo llega al grupo: hay que quitar del DOM las etiquetas hijas.
       this._bboxGroup.traverse((c) => {
         if (c.geometry) c.geometry.dispose();
         if (c.material) this._disposeMaterial(c.material);
+        if (c.isCSS2DObject) c.element.remove();
       });
       this._bboxGroup = null;
     }
@@ -689,6 +735,11 @@ export class Viewer3D {
     const ax = s.axis in SECTION_KEEP ? s.axis : 'x';
     p[ax] += +s.offset || 0;
     this._plane.setFromNormalAndCoplanarPoint(n, p);
+    if (m) {
+      // El plano de la tapa mira hacia el lado eliminado (hacia la cámara que ve el corte).
+      m.capPlane.position.copy(p);
+      m.capPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n.clone().negate());
+    }
     const planes = s.enabled ? [this._plane] : null;
     for (const mt of this._clippable) mt.clippingPlanes = planes;
   }
@@ -736,7 +787,8 @@ export class Viewer3D {
       hv = Math.max(hv, cv);
     }
     const R = box.getSize(new THREE.Vector3()).length() / 2 || 1;
-    const halfH = Math.max(hv, hu / aspect, 1e-3) * 1.12;
+    // Margen de encuadre ortográfico algo mayor: la pieza no debe quedar bajo la barra de la app.
+    const halfH = Math.max(hv, hu / aspect, 1e-3) * 1.25;
     const goal = { dir, target: center, dist: Math.max(dist, 1e-3), halfH, R };
     if (animate) {
       this._anim = { t0: null, from: this._camState(), to: goal, dur: 380 };
