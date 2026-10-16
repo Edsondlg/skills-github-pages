@@ -162,32 +162,48 @@ function makePaintTextures(renderer) {
 }
 
 function makeConcreteTextures(renderer) {
+  // One texture tile = one floor slab: satin epoxy-grey concrete, roughness variation, saw-cut joints.
   const w = 1024, h = 1024;
-  const f = fbm(w, h, 6, 256, 71);
+  const f = fbm(w, h, 6, 256, 71), g = fbm(w, h, 3, 512, 91);
   const r = rng(72);
   const cMap = canvas(w, h), cRough = canvas(w, h);
   const ctxM = cMap.getContext('2d'), ctxR = cRough.getContext('2d');
   const im = ctxM.createImageData(w, h), ir = ctxR.createImageData(w, h);
   for (let i = 0; i < f.length; i++) {
-    let v = 0.62 + 0.22 * (f[i] - 0.5);
+    let v = 0.40 + 0.10 * (f[i] - 0.5) + 0.06 * (g[i] - 0.5);
     const speck = r();
-    if (speck < 0.02) v -= 0.08 * r(); else if (speck > 0.985) v += 0.06 * r();
-    im.data[i * 4] = v * 0.98 * 255; im.data[i * 4 + 1] = v * 0.97 * 255; im.data[i * 4 + 2] = v * 0.95 * 255; im.data[i * 4 + 3] = 255;
-    const rv = 0.78 + 0.18 * (1 - f[i]);
-    ir.data[i * 4] = ir.data[i * 4 + 1] = ir.data[i * 4 + 2] = rv * 255; ir.data[i * 4 + 3] = 255;
+    if (speck < 0.02) v -= 0.05 * r(); else if (speck > 0.99) v += 0.05 * r();
+    im.data[i * 4] = v * 0.98 * 255; im.data[i * 4 + 1] = v * 0.99 * 255; im.data[i * 4 + 2] = v * 1.0 * 255; im.data[i * 4 + 3] = 255;
+    const rv = 0.36 + 0.30 * g[i] + 0.10 * (f[i] - 0.5);
+    ir.data[i * 4] = ir.data[i * 4 + 1] = ir.data[i * 4 + 2] = Math.min(1, Math.max(0, rv)) * 255; ir.data[i * 4 + 3] = 255;
   }
   ctxM.putImageData(im, 0, 0); ctxR.putImageData(ir, 0, 0);
-  // Saw-cut slab joints along the edges (tile = one slab).
-  ctxM.fillStyle = 'rgba(60,58,55,0.55)';
-  ctxM.fillRect(0, 0, w, 3); ctxM.fillRect(0, 0, 3, h);
+  // Saw-cut slab joints along the edges (tile = one slab): dark in colour, rough in roughness.
+  ctxM.fillStyle = 'rgba(28,28,30,0.75)';
+  ctxM.fillRect(0, 0, w, 4); ctxM.fillRect(0, 0, 4, h);
+  ctxR.fillStyle = 'rgb(235,235,235)';
+  ctxR.fillRect(0, 0, w, 4); ctxR.fillRect(0, 0, 4, h);
   return { map: toTexture(cMap, true, renderer), roughnessMap: toTexture(cRough, false, renderer) };
 }
 
-export function makeGradientBackground(top = '#c9ced6', bottom = '#eef0f2') {
+/** Soft contact-shadow blob (rounded rectangle with a blurred edge) for under the machine. */
+export function makeContactShadowTexture() {
+  const c = canvas(512, 256), ctx = c.getContext('2d');
+  ctx.filter = 'blur(18px)';
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(40, 40, 432, 176, 30); else ctx.rect(40, 40, 432, 176);
+  ctx.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.NoColorSpace;
+  return t;
+}
+
+export function makeGradientBackground(top = '#4a5058', bottom = '#9da2a8') {
   const c = canvas(4, 512);
   const ctx = c.getContext('2d');
   const g = ctx.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0, top); g.addColorStop(0.62, bottom); g.addColorStop(1, '#dcdfe3');
+  g.addColorStop(0, top); g.addColorStop(0.7, bottom); g.addColorStop(1, '#8a8e93');
   ctx.fillStyle = g; ctx.fillRect(0, 0, 4, 512);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -205,13 +221,16 @@ export function createMaterials(renderer) {
   const paint = makePaintTextures(renderer);
   const concrete = makeConcreteTextures(renderer);
 
-  const painted = (color, rough = 1) => new THREE.MeshStandardMaterial({
-    color, map: paint.map, roughnessMap: paint.roughnessMap, roughness: rough, metalness: 0.15,
+  // Satin painted steel (orange-peel roughness); `coat` adds a glossy clearcoat (signal-yellow paint).
+  const painted = (color, rough = 1, coat = 0) => new THREE.MeshPhysicalMaterial({
+    color, map: paint.map, roughnessMap: paint.roughnessMap, roughness: rough, metalness: 0.05,
+    clearcoat: coat, clearcoatRoughness: 0.12,
   });
 
-  const toolSteel = new THREE.MeshStandardMaterial({
-    color: 0x4a515c, metalness: 0.9, roughness: 1.0, map: machined.map, roughnessMap: machined.roughnessMap,
-    envMapIntensity: 1.0,
+  // Hardened, black-oxidised tool steel with a machined (lathe) anisotropic finish.
+  const toolSteel = new THREE.MeshPhysicalMaterial({
+    color: 0x3a3f46, metalness: 0.85, roughness: 0.9, map: machined.map, roughnessMap: machined.roughnessMap,
+    anisotropy: 0.55, envMapIntensity: 1.1,
   });
 
   const m = {
@@ -227,14 +246,18 @@ export function createMaterials(renderer) {
     tubeColor: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.05, roughness: 0.55 }),
     tubeColorInner: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.05, roughness: 0.7, color: 0xcfcfcf }),
     // Machine
-    paintYellow: painted(0xf2b705, 1.0),        // ≈ RAL 1003 signal yellow
-    paintGrey: painted(0xc4c9cf, 1.0),          // light cool grey cabinet
-    paintGreyDark: painted(0x8d939b, 1.0),
-    paintBlack: painted(0x1c1d20, 0.9),
-    paintOrange: painted(0xd8431c, 0.9),        // gearbox block
-    blackMachined: new THREE.MeshStandardMaterial({ color: 0x1a1b1e, metalness: 0.7, roughness: 0.38 }),
-    vent: new THREE.MeshStandardMaterial({ color: 0x1b1c1f, metalness: 0.3, roughness: 0.7 }),
-    chrome: new THREE.MeshStandardMaterial({ color: 0xf0f1f3, metalness: 1.0, roughness: 0.07 }),
+    paintYellow: painted(0xf2a900, 0.75, 0.85), // ≈ RAL 1003 signal yellow, glossy clearcoat
+    paintGrey: painted(0xa9afb6, 1.1),          // light cool-grey satin cabinet paint
+    paintGreyDark: painted(0x6c727a, 1.0),
+    paintBlack: painted(0x18191b, 0.85, 0.3),
+    paintOrange: painted(0xc8401a, 0.8, 0.5),   // gearbox block
+    blackMachined: new THREE.MeshPhysicalMaterial({
+      color: 0x24262a, metalness: 0.75, roughness: 0.8, roughnessMap: machined.roughnessMap, anisotropy: 0.4,
+    }),
+    steelDark: new THREE.MeshStandardMaterial({ color: 0x3b3f45, metalness: 0.85, roughness: 0.32 }),
+    hose: new THREE.MeshStandardMaterial({ color: 0x141416, metalness: 0.0, roughness: 0.55 }),
+    vent: new THREE.MeshStandardMaterial({ color: 0x17181b, metalness: 0.3, roughness: 0.7 }),
+    chrome: new THREE.MeshStandardMaterial({ color: 0xf0f1f3, metalness: 1.0, roughness: 0.04, envMapIntensity: 1.3 }),
     steel: new THREE.MeshStandardMaterial({
       color: 0xffffff, metalness: 1.0, roughness: 1.0, map: brushed.map, roughnessMap: brushed.roughnessMap,
     }),
@@ -243,14 +266,16 @@ export function createMaterials(renderer) {
     blockGreen: new THREE.MeshStandardMaterial({ color: 0x2f8f3a, metalness: 0.4, roughness: 0.4 }),
     floor: new THREE.MeshStandardMaterial({
       color: 0xffffff, map: concrete.map, roughnessMap: concrete.roughnessMap, roughness: 1.0, metalness: 0.0,
+      envMapIntensity: 0.6,
     }),
+    contactShadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55, depthWrite: false, alphaMap: makeContactShadowTexture() }),
     // Tools (clippable instances)
     toolSteel,
     toolChrome: new THREE.MeshStandardMaterial({ color: 0xeceef0, metalness: 1.0, roughness: 0.08 }),
-    toolBlack: new THREE.MeshStandardMaterial({ color: 0x18191c, metalness: 0.7, roughness: 0.4 }),
+    toolBlack: new THREE.MeshPhysicalMaterial({ color: 0x1c1d20, metalness: 0.75, roughness: 0.8, roughnessMap: machined.roughnessMap, anisotropy: 0.4 }),
     toolSerrated: new THREE.MeshStandardMaterial({ color: 0x3a3f47, metalness: 0.9, roughness: 0.6 }),
     // Mandrel
-    mandrelChrome: new THREE.MeshStandardMaterial({ color: 0xf4f5f7, metalness: 1.0, roughness: 0.05 }),
+    mandrelChrome: new THREE.MeshStandardMaterial({ color: 0xf4f5f7, metalness: 1.0, roughness: 0.04, envMapIntensity: 1.3 }),
     mandrelBronze: new THREE.MeshStandardMaterial({ color: 0xb08d57, metalness: 0.95, roughness: 0.3 }),
     // Overlay
     marker: new THREE.MeshBasicMaterial({ color: 0x00b4ff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }),
