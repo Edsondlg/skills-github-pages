@@ -8,6 +8,8 @@
 //                 desde un Blob (Chrome no permite Workers de archivo en file://).
 //   occt-wasm.js  Binario WebAssembly de OpenCascade comprimido (gzip) y en
 //                 base64, en window.__OCCT_WASM_GZ_B64__ (fetch está bloqueado en file://).
+//   dwg-wasm.js   Conversor DWG→DXF (dwgdxf/acadrust) en WebAssembly, gzip + base64, en
+//                 window.__DWG_WASM_GZ_B64__ (lo usa src/importers/dwg.js).
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,7 +33,9 @@ async function buildApp() {
     minify: true,
     legalComments: 'eof',
     banner: { js: banner },
-    loader: { '.dxf': 'text', '.svg': 'text', '.png': 'dataurl', '.jpg': 'dataurl' },
+    loader: { '.dxf': 'text', '.dwg': 'binary', '.svg': 'text', '.png': 'dataurl', '.jpg': 'dataurl' },
+    // En un IIFE no existe import.meta; src/importers/dwg.js solo lo usa en Node.
+    define: { 'import.meta.url': '"file:///dwgdxf/dwgdxf.js"' },
     logLevel: 'warning',
   });
 }
@@ -56,11 +60,14 @@ async function buildKernel() {
   fs.writeFileSync(path.join(out, 'kernel.js'), `${banner}\nwindow.__PLANO3D_KERNEL_SRC__=${JSON.stringify(code)};\n`);
 }
 
-function buildWasm() {
-  const wasmPath = path.join(root, 'node_modules/replicad-opencascadejs/dist/replicad_single.wasm');
-  const gz = zlib.gzipSync(fs.readFileSync(wasmPath), { level: 9 });
-  fs.writeFileSync(path.join(out, 'occt-wasm.js'), `${banner}\nwindow.__OCCT_WASM_GZ_B64__="${gz.toString('base64')}";\n`);
+function buildWasm(wasmPath, outName, globalName) {
+  const gz = zlib.gzipSync(fs.readFileSync(path.join(root, wasmPath)), { level: 9 });
+  fs.writeFileSync(path.join(out, outName), `${banner}\nwindow.${globalName}="${gz.toString('base64')}";\n`);
 }
+const WASMS = [
+  ['node_modules/replicad-opencascadejs/dist/replicad_single.wasm', 'occt-wasm.js', '__OCCT_WASM_GZ_B64__'],
+  ['node_modules/dwgdxf/dist/wasm/dwgdxf_bg.wasm', 'dwg-wasm.js', '__DWG_WASM_GZ_B64__'],
+];
 
 // Versión de un solo archivo (--single): index.html con CSS y scripts incrustados, para
 // compartir o abrir con doble clic sin la carpeta completa.
@@ -71,6 +78,7 @@ function buildSingle() {
   const swaps = [
     ['<link rel="stylesheet" href="css/app.css">', () => `<style>${read('css/app.css')}</style>`],
     ['<script src="build/occt-wasm.js"></script>', () => inlineJs('build/occt-wasm.js')],
+    ['<script src="build/dwg-wasm.js"></script>', () => inlineJs('build/dwg-wasm.js')],
     ['<script src="build/kernel.js"></script>', () => inlineJs('build/kernel.js')],
     ['<script src="build/app.js"></script>', () => inlineJs('build/app.js')],
   ];
@@ -86,9 +94,10 @@ function buildSingle() {
 
 const t0 = Date.now();
 await Promise.all([buildApp(), buildKernel()]);
-const wasmOut = path.join(out, 'occt-wasm.js');
-if (process.argv.includes('--wasm') || !fs.existsSync(wasmOut)) buildWasm();
-for (const f of ['app.js', 'kernel.js', 'occt-wasm.js']) {
+for (const [wasmPath, outName, globalName] of WASMS) {
+  if (process.argv.includes('--wasm') || !fs.existsSync(path.join(out, outName))) buildWasm(wasmPath, outName, globalName);
+}
+for (const f of ['app.js', 'kernel.js', 'occt-wasm.js', 'dwg-wasm.js']) {
   const s = fs.statSync(path.join(out, f)).size;
   console.log(`build/${f}  ${(s / 1024).toFixed(0)} KB`);
 }

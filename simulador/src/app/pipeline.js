@@ -10,6 +10,7 @@
 import { segTransform, segLength, segInvalidReason } from '../geom2d/segments.js';
 import { buildLoops, loopInfo, buildRegions, bboxOfSegments } from '../geom2d/loops.js';
 import { parseDXF } from '../importers/dxf.js';
+import { parseDWG } from '../importers/dwg.js';
 import { parseSVG } from '../importers/svg.js';
 import { traceImage } from '../importers/image-trace.js';
 import { computePartData } from '../ui/report.js';
@@ -24,7 +25,8 @@ const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp']);
 /**
  * @typedef {{segs: Object[]}} Loop
  * @typedef {Object} Drawing
- * @property {'dxf'|'svg'|'image'} format
+ * @property {'dxf'|'dwg'|'svg'|'image'} format
+ * @property {string} [version]  solo DWG: versión legible (p. ej. 'AC1027 (AutoCAD 2013)')
  * @property {string} fileName
  * @property {{name:string,toMM:number,detected:boolean}} units   unidades del dibujo; detected=false si se supusieron
  * @property {Array<{name:string,color?:number,linetype?:string,frozen?:boolean,off?:boolean}>} layers
@@ -36,14 +38,15 @@ const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp']);
  */
 
 /**
- * Detecta el formato por extensión; si no la reconoce, olfatea DXF en el contenido ("0\nSECTION").
+ * Detecta el formato por extensión; si no la reconoce, olfatea DXF ("0\nSECTION") o DWG (firma AC10xx) en el contenido.
  * @param {string} fileName
  * @param {string|Uint8Array} [firstBytes]  primeros bytes del archivo (opcional)
- * @returns {'dxf'|'svg'|'image'|null}
+ * @returns {'dxf'|'dwg'|'svg'|'image'|null}
  */
 export function detectFormat(fileName, firstBytes) {
   const ext = String(fileName || '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
   if (ext === 'dxf') return 'dxf';
+  if (ext === 'dwg') return 'dwg';
   if (ext === 'svg') return 'svg';
   if (IMAGE_EXT.has(ext)) return 'image';
   if (firstBytes != null) {
@@ -53,6 +56,7 @@ export function detectFormat(fileName, firstBytes) {
       for (let i = 0; i < Math.min(firstBytes.length, 256); i++) head += String.fromCharCode(firstBytes[i]);
     }
     if (/^\s*0\s*\r?\n\s*SECTION\b/.test(head)) return 'dxf';
+    if (/^AC10\d\d/.test(head)) return 'dwg';
   }
   return null;
 }
@@ -66,15 +70,7 @@ export function detectFormat(fileName, firstBytes) {
  * @returns {Drawing}
  */
 export function importText(format, text, fileName = '') {
-  if (format === 'dxf') {
-    const d = parseDXF(text);
-    const u = d.units;
-    return {
-      format, fileName,
-      units: { name: u.assumed ?? u.name, toMM: u.toMM, detected: !u.assumed },
-      layers: d.layers, segments: d.segments, texts: d.texts, warnings: d.warnings, stats: d.stats,
-    };
-  }
+  if (format === 'dxf') return drawingFromDXF(format, parseDXF(text), fileName);
   if (format === 'svg') {
     const d = parseSVG(text);
     const u = d.units || { name: 'mm', toMM: 1 };
@@ -87,6 +83,27 @@ export function importText(format, text, fileName = '') {
     };
   }
   throw new Error(`Formato de plano no soportado: ${format}`);
+}
+
+/**
+ * Importa un DWG (R13–2018): se convierte a DXF y se analiza igual (ver importers/dwg.js).
+ * @param {Uint8Array|ArrayBuffer} bytes
+ * @param {string} [fileName]
+ * @returns {Promise<Drawing>}  con format 'dwg' y version
+ */
+export async function importDWG(bytes, fileName = '') {
+  const d = await parseDWG(bytes);
+  return { ...drawingFromDXF('dwg', d, fileName), version: d.version };
+}
+
+// Resultado de parseDXF → Drawing.
+function drawingFromDXF(format, d, fileName) {
+  const u = d.units;
+  return {
+    format, fileName,
+    units: { name: u.assumed ?? u.name, toMM: u.toMM, detected: !u.assumed },
+    layers: d.layers, segments: d.segments, texts: d.texts, warnings: d.warnings, stats: d.stats,
+  };
 }
 
 /**

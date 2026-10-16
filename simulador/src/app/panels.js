@@ -8,7 +8,7 @@ const esc = ui.escapeHtml;
 const MM_PER_IN = 25.4;
 export const REGION_COLORS = ['#4c8dff', '#3fb950', '#d29922', '#a371f7', '#f778ba', '#39c5cf', '#f0883e', '#8b949e'];
 const MODE_NAMES = { extrude: 'Extrusión', revolve: 'Revolución', multiview: 'Multivista' };
-const FORMAT_NAMES = { dxf: 'DXF', svg: 'SVG', image: 'Imagen' };
+const FORMAT_NAMES = { dxf: 'DXF', dwg: 'DWG', svg: 'SVG', image: 'Imagen' };
 
 /** Separa "12.345 mm" en ["12.345", "mm"]. */
 export function splitUnit(s) {
@@ -34,7 +34,7 @@ export function renderPlano(drawing, profile, { hiddenLayers, theme }) {
   const st = profile.stats;
   const fmtName = FORMAT_NAMES[drawing.format] || drawing.format;
   $('stepPlanoSummary').textContent = `${fmtName} · ${drawing.segments.length} entidades`;
-  $('infoFormat').textContent = fmtName;
+  $('infoFormat').textContent = drawing.version ? `${fmtName} ${drawing.version}` : fmtName;
   const u = drawing.units;
   $('infoUnits').textContent = drawing.format === 'image' ? 'px (escala manual)' : `${u.name}${u.detected ? '' : ' (supuesto)'}`;
   $('infoScale').textContent = `× ${+profile.toMM.toPrecision(6)} mm`;

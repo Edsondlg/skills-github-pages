@@ -9,7 +9,7 @@ import { makeFormatter } from '../ui/report.js';
 import { materialGroups, findMaterial, CUSTOM_MATERIAL_ID, customMaterial } from '../ui/materials.js';
 import { decodeDXF } from '../importers/dxf.js';
 import { segTransform } from '../geom2d/segments.js';
-import { detectFormat, importText, importImage, prepareProfile, defaultOpState, applySuggested, makeJob, computeAll } from './pipeline.js';
+import { detectFormat, importText, importDWG, importImage, prepareProfile, defaultOpState, applySuggested, makeJob, computeAll } from './pipeline.js';
 import { SAMPLES } from './samples.js';
 import { renderPlano, renderRegions, renderSlots, renderProps, axisText } from './panels.js';
 import { createAppApi } from './app-api.js';
@@ -226,9 +226,10 @@ async function openFiles(files) {
     const head = new Uint8Array(await file.slice(0, 256).arrayBuffer());
     if (!current()) return;
     format = detectFormat(file.name, head);
-    if (!format) throw new Error(`Formato no reconocido: ${file.name}. Use DXF, SVG o una imagen (PNG/JPG).`);
+    if (!format) throw new Error(`Formato no reconocido: ${file.name}. Use DXF, DWG, SVG o una imagen (PNG/JPG).`);
     let drawing, image = null;
     if (format === 'dxf') drawing = importText('dxf', decodeDXF(new Uint8Array(await file.arrayBuffer())), file.name);
+    else if (format === 'dwg') drawing = await importDWG(new Uint8Array(await file.arrayBuffer()), file.name);
     else if (format === 'svg') drawing = importText('svg', await file.text(), file.name);
     else {
       const url = URL.createObjectURL(file);
@@ -264,7 +265,8 @@ async function loadSample(id) {
       image = await decodeImage(s.content, s.fileName);
       if (token !== loadToken) return;
       drawing = traceWith(image, { mmPerPx, auto: true, invert: false });
-    } else drawing = importText(s.format, s.content, s.fileName);
+    } else if (s.format === 'dwg') drawing = await importDWG(s.content, s.fileName);
+    else drawing = importText(s.format, s.content, s.fileName);
     if (token !== loadToken) return;
     S.sampleId = id;
     loadDrawing(drawing, s.suggested, image && { image, mmPerPx });

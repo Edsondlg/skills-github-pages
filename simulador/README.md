@@ -1,6 +1,6 @@
 # Simulador Plano 2D → Pieza 3D
 
-Aplicación de navegador que convierte un plano 2D (DXF, SVG o imagen) en una pieza 3D exacta
+Aplicación de navegador que convierte un plano 2D (DXF, DWG, SVG o imagen) en una pieza 3D exacta
 (B-rep de OpenCascade) y calcula sus datos físicos: masa, volumen, densidad, caja envolvente,
 centro de masa, tensor de inercia y datos de troquelado. Incluye herramientas de medición 2D/3D y
 exportación a STEP, STL, OBJ, GLB y reportes. Pensada para ingeniería de producto y cotización en
@@ -29,6 +29,7 @@ funcionar.
 
 - **Importación**
   - DXF ASCII (unidades `$INSUNITS`, capas, bloques anidados, splines, polilíneas con abombado),
+    DWG R13–2018 (se convierte a DXF en el navegador con el conversor WebAssembly de dwgdxf),
     SVG (unidades, transformaciones, curvas Bézier) e imágenes PNG/JPG (trazado por umbral).
   - Unidades del plano automáticas o forzadas (mm, cm, m, in, ft); capas visibles/ocultas; líneas de
     eje y ocultas ignoradas.
@@ -132,7 +133,7 @@ simulador/
   Simulador-Plano-3D.html  versión de un solo archivo (npm run build:single)
   css/              estilos
   src/app/          integración: main.js, pipeline.js, paneles, modos (modes-ui.js), app-api.js
-  src/importers/    DXF, SVG e imagen
+  src/importers/    DXF, DWG, SVG e imagen
   src/geom2d/       geometría 2D (segmentos, contornos, regiones)
   src/kernel/       motor CAD (OpenCascade vía replicad) en un worker
   src/viewer/       visor 3D (three.js) y medición

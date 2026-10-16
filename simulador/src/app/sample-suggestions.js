@@ -5,6 +5,7 @@
 export const SAMPLE_SUGGESTIONS = {
   'placa-soporte': { mode: 'extrude', thickness: 2, materialId: 'acero-1008' },
   'brida-bloques': { mode: 'extrude', thickness: 12, materialId: 'acero-a36' },
+  'brida-bloques-dwg': { mode: 'extrude', thickness: 12, materialId: 'acero-a36' },
   // Medio perfil cerrado sobre y = 0: revolución completa alrededor de la línea de centros (eje X).
   'eje-perfil': {
     mode: 'revolve', thickness: 2, materialId: 'acero-1045',

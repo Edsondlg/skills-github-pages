@@ -35,7 +35,7 @@
 
     <div class="topbar-actions">
       <button id="btnOpen" class="btn btn-primary" type="button" data-tip="Abrir plano" data-kbd="Ctrl+O"><i data-icon="open"></i><span class="btn-label">Abrir plano</span></button>
-      <input id="fileInput" type="file" accept=".dxf,.svg,.png,.jpg,.jpeg,.bmp,.webp" hidden>
+      <input id="fileInput" type="file" accept=".dxf,.dwg,.svg,.png,.jpg,.jpeg,.bmp,.webp" hidden>
 
       <div class="dropdown">
         <button id="btnExamples" class="btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menuExamples"><i data-icon="examples"></i><span class="btn-label">Ejemplos</span><i data-icon="chevron" data-size="14" class="caret"></i></button>
@@ -89,7 +89,7 @@
             <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Abrir o arrastrar un plano">
               <span class="dropzone-icon"><i data-icon="upload" data-size="22"></i></span>
               <span class="dropzone-title">Arrastra un DXF, SVG o imagen</span>
-              <span class="dropzone-sub">DXF · SVG · PNG · JPG · BMP · WEBP</span>
+              <span class="dropzone-sub">DXF · DWG · SVG · PNG · JPG · BMP · WEBP</span>
               <span class="dropzone-sub">o haz clic para elegir un archivo</span>
             </div>
             <button id="btnDropExample" class="btn btn-link" type="button"><i data-icon="examples"></i>o abre un ejemplo</button>
@@ -554,7 +554,7 @@
     <section>
       <h3>Cómo se usa</h3>
       <ol class="help-steps">
-        <li><strong>Abrir el plano.</strong> Abra o arrastre un DXF, SVG o imagen (PNG/JPG), o elija uno de los <em>Ejemplos</em>.</li>
+        <li><strong>Abrir el plano.</strong> Abra o arrastre un DXF, DWG (R13–2018), SVG o imagen (PNG/JPG), o elija uno de los <em>Ejemplos</em>.</li>
         <li><strong>Revisar los contornos.</strong> <span class="help-sw sw-in"></span>azul = pieza incluida · <span class="help-sw sw-out"></span>rayado = excluida · <span class="help-sw sw-open"></span>naranja = cadenas abiertas (huecos en el dibujo; suba la tolerancia de unión). Clic en una región para incluirla o excluirla.</li>
         <li><strong>Elegir la operación.</strong> <em>Extrusión</em> da espesor a las regiones (cada agujero: pasante, ciego o relleno). <em>Revolución</em> gira el perfil: elija el eje (X, Y o una línea del plano). <em>Multivista</em> reconstruye la pieza: defina una ventana por vista (planta, alzado, laterales).</li>
         <li><strong>Material.</strong> Elija el material (o la densidad), el precio por kg y el margen de blank para el costo y los datos de lámina.</li>
@@ -600,6 +600,7 @@
 </template>
 
 <script src="build/occt-wasm.js"></script>
+<script src="build/dwg-wasm.js"></script>
 <script src="build/kernel.js"></script>
 <script src="build/app.js"></script>
 </body>
