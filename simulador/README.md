@@ -6,10 +6,22 @@ centro de masa, tensor de inercia y datos de troquelado. Incluye herramientas de
 exportación a STEP, STL, OBJ, GLB y reportes. Pensada para ingeniería de producto y cotización en
 estampado de metal.
 
+## Descarga rápida
+
+- **Un solo archivo:** descargue solo `simulador/Simulador-Plano-3D.html` (~11 MB) y ábralo con
+  doble clic. Lleva todo dentro (estilos, motor CAD y ejemplos).
+- **Carpeta completa:** descargue el ZIP del repositorio (botón «Code» → «Download ZIP»),
+  descomprímalo y abra `simulador/index.html` con doble clic.
+
+La primera carga tarda unos segundos mientras arranca el motor CAD (OpenCascade en WebAssembly);
+la barra superior muestra «Motor CAD listo» cuando termina. No necesita instalación ni internet.
+Probado en Chrome y Edge (Chromium); Firefox y Safari en versiones recientes también deberían
+funcionar.
+
 ## Cómo abrirlo
 
-- **Local:** doble clic en `simulador/index.html`. Funciona en Chrome, Edge o Firefox, sin instalar
-  nada y sin internet (todo va dentro de `build/`).
+- **Local:** doble clic en `simulador/index.html` (usa `build/`) o en
+  `simulador/Simulador-Plano-3D.html` (todo incrustado). Funciona sin internet.
 - **GitHub Pages:** `https://<usuario>.github.io/skills-github-pages/simulador/`, cuando Pages esté
   activo en la rama publicada.
 
@@ -31,6 +43,9 @@ estampado de metal.
   - Multivista por siluetas: se encuadra la planta, el alzado y las laterales con «Definir ventana»;
     la pieza es la intersección de las siluetas extruidas. Da igual el sistema de proyección (primer o
     tercer ángulo): cada vista se alinea por su propia caja envolvente.
+- **Espesor:** valor libre, calibres de lámina (10–16 ga) o accesos rápidos; extrusión simétrica.
+- **Visor 3D:** vistas estándar, ortográfica/perspectiva, aristas, rayos X, alambre, rejilla, caja
+  envolvente y corte de sección (X, Y o Z). Pestañas «Plano 2D», «Pieza 3D» y «Dividido».
 - **Propiedades:** masa, volumen, densidad, área de superficie, caja envolvente, centro de masa,
   tensor de inercia y momentos principales.
 - **Datos de troquelado:** blank, aprovechamiento de lámina, longitud de corte, fuerza de corte,
@@ -39,6 +54,8 @@ estampado de metal.
   y material personalizado con densidad propia.
 - **Medición** en 2D (distancias y radios con referencias a extremos, centros, puntos medios y
   cuadrantes) y en 3D (punto, distancia, ángulo, radio, área, coordenadas y espesor).
+- **Unidades de trabajo** mm o in (barra superior) para todos los valores y mediciones; tema
+  oscuro o claro.
 - **Calibración de imágenes** con dos puntos de distancia conocida.
 - **Exportación:** STEP exacto, STL (binario y ASCII), OBJ, GLB, PLY, reporte imprimible / PDF,
   CSV, JSON y PNG.
@@ -69,31 +86,34 @@ Menú **Ejemplos** de la barra superior:
 
 ## Atajos de teclado
 
+Los atajos sin `Ctrl` no actúan mientras se escribe en un campo ni con un diálogo abierto.
+
 | Tecla | Acción |
 | --- | --- |
-| `I` | Vista isométrica |
-| `P` | Perspectiva / ortográfica |
-| `D` | Medir distancia |
-| `A` | Medir ángulo |
-| `R` | Medir radio |
-| `F` | Ajustar a la vista |
-| `C` | Coordenadas de un punto |
-| `T` | Espesor |
-| `Esc` | Cancelar la herramienta, la ventana o la calibración en curso |
-| `1`–`4` | Vistas frontal, superior, derecha e isométrica |
-| `Home` | Ajustar la vista 2D |
-| `O` | Abrir plano |
-| `E` | Elegir eje de revolución |
-| `X` | Corte de sección |
-| `W` | Ventana de vista (multivista) |
-| `S` | Seleccionar (2D) |
-| `G` | Generar la pieza |
 | `Ctrl+O` | Abrir plano |
+| `G` · `Ctrl+Enter` | Generar la pieza 3D |
 | `Ctrl+S` | Exportar STEP |
-| `Ctrl+P` | Reporte imprimible |
+| `Ctrl+P` | Reporte (imprimir / PDF) |
+| `I` | Inspeccionar (cara, arista o vértice) |
+| `P` | Punto a punto |
+| `D` | Distancia mínima |
+| `A` | Ángulo |
+| `R` | Radio / Ø |
+| `F` | Área |
+| `C` | Coordenadas |
+| `T` | Espesor |
+| `1` `2` `3` `4` | Vistas isométrica, frente, superior y derecha |
+| `Inicio` (`Home`) | Ajustar a la vista (2D, 3D o ambas en vista dividida) |
+| `O` | Ortográfica / perspectiva |
+| `S` | Corte de sección |
+| `E` | Aristas |
+| `X` | Rayos X |
+| `W` | Alambre |
+| `Esc` | Cerrar diálogo, menú o panel; cancelar la herramienta de medición, la ventana de vista, la calibración o la elección del eje |
 | `?` | Ayuda |
 
-La ayuda (`?`) de la aplicación muestra la lista vigente.
+Las herramientas de medición (`I` a `T`) pasan a la pestaña «Pieza 3D» si está abierta la del plano.
+La ayuda (`?`) de la aplicación muestra la misma lista.
 
 ## Limitaciones
 
@@ -109,6 +129,7 @@ La ayuda (`?`) de la aplicación muestra la lista vigente.
 ```
 simulador/
   index.html        página (abre build/app.js)
+  Simulador-Plano-3D.html  versión de un solo archivo (npm run build:single)
   css/              estilos
   src/app/          integración: main.js, pipeline.js, paneles, modos (modes-ui.js), app-api.js
   src/importers/    DXF, SVG e imagen
@@ -126,13 +147,15 @@ simulador/
 ```
 cd simulador
 npm ci
-npm run build      # genera build/
+npm run build          # genera build/
+npm run build:single   # además, Simulador-Plano-3D.html (un solo archivo, ~11 MB)
 npm test           # pruebas de Node
 node tests/browser/app-core.e2e.mjs    # e2e (Playwright + Chromium)
 node tests/browser/app-modes.e2e.mjs
 ```
 
-Las pruebas e2e de `tests/browser/` reconstruyen `build/`. Los contratos entre módulos están en
+`build:single` incrusta en `index.html` el CSS, `build/occt-wasm.js`, `build/kernel.js` y
+`build/app.js`. Las pruebas e2e de `tests/browser/` reconstruyen `build/`. Los contratos entre módulos están en
 `docs/ARQUITECTURA.md`. La app debe seguir funcionando desde `file://`: nada de `fetch`/XHR ni
 `import()` dinámico.
 
