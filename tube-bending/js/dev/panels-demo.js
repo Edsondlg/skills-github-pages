@@ -8,8 +8,9 @@ import { MATERIALS, getMaterial } from '../materials.js';
 import { computeCost } from '../cost.js';
 import { h } from '../ui/format.js';
 
-// Agregar aquí 'analisis', 'fld', 'seccion', 'costos' cuando existan sus módulos (un import faltante es un error de consola).
-const PANEL_IDS = ['herramental'];
+// Paneles a montar: ?panels=fld,seccion (por omisión todos). Un import faltante es un error de consola.
+const ALL_PANELS = ['herramental', 'analisis', 'fld', 'seccion', 'costos'];
+const PANEL_IDS = (new URLSearchParams(location.search).get('panels') || ALL_PANELS.join(',')).split(',').filter(Boolean);
 const SAMPLES = ['escape_5_dobleces', 'travesano_calibre_variable', 'soporte_3d_hsla', 'horquilla_180', 'doblez_compuesto'];
 const DEFAULT_MAT = { escape_5_dobleces: 'aisi409', travesano_calibre_variable: 'hsla420', soporte_3d_hsla: 'hsla420', horquilla_180: 'sae1010-cew', doblez_compuesto: 'sae1020-dom' };
 

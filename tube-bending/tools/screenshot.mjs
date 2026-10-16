@@ -1,5 +1,5 @@
 // Captura de pantalla headless de la app (WebGL vía SwiftShader).
-// Uso: node tools/screenshot.mjs [--page index.html] [--out .scratch/shot.png] [--wait 4000]
+// Uso: node tools/screenshot.mjs [--page index.html?panels=fld] [--out .scratch/shot.png] [--wait 4000]
 //        [--eval "js a ejecutar en la página antes de capturar"] [--size 1600x1000]
 // Las peticiones a cdn.jsdelivr.net/npm/three@0.160.0 se sirven desde node_modules/three
 // (el proxy del contenedor bloquea el CDN); Google Fonts se bloquea (usa la fuente de respaldo).
@@ -37,7 +37,8 @@ await page.route('https://cdn.jsdelivr.net/npm/three@0.160.0/**', (route) => {
   if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: 'missing ' + rel });
   route.fulfill({ status: 200, contentType: 'text/javascript', body: fs.readFileSync(file) });
 });
-await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+// Google Fonts no es accesible desde el contenedor: se responde vacío (se usan las fuentes de respaldo).
+await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
 await page.goto(base + page_, { waitUntil: 'load' });
 await page.waitForTimeout(wait);
 if (args.eval) {
