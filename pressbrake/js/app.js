@@ -147,19 +147,24 @@ let edgeLines = null;
 
 // ---------------- carga STEP ----------------
 let occtPromise = null;
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
 function loadOcct() {
+  // primero una copia local (vendor/), si no existe se usa el CDN
   if (!occtPromise) {
-    occtPromise = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = OCCT_BASE + 'occt-import-js.js';
-      s.onload = () => window.occtimportjs({ locateFile: (f) => OCCT_BASE + f }).then(resolve, reject);
-      s.onerror = () => reject(new Error('No se pudo descargar el motor CAD (OpenCascade).'));
-      document.head.appendChild(s);
-    });
+    occtPromise = loadScript('vendor/occt-import-js.js').then(() => 'vendor/', () => loadScript(OCCT_BASE + 'occt-import-js.js').then(() => OCCT_BASE))
+      .then((base) => window.occtimportjs({ locateFile: (f) => base + f }))
+      .catch(() => { occtPromise = null; throw new Error('no se pudo descargar el motor CAD (OpenCascade); revisa tu conexión a internet.'); });
   }
   return occtPromise;
 }
 
+function showError(msg) { $('errMsg').textContent = msg; $('errbox').hidden = false; }
 function showLoading(msg) { $('loading').hidden = !msg; if (msg) $('loadingMsg').textContent = msg; }
 
 async function loadStepBuffer(buf, name) {
@@ -191,7 +196,7 @@ async function loadStepBuffer(buf, name) {
     analyze();
   } catch (e) {
     console.error(e);
-    alert('Error al procesar el STEP: ' + e.message);
+    showError('No se pudo procesar el STEP: ' + e.message);
   } finally {
     showLoading(null);
   }
@@ -202,7 +207,7 @@ function analyze() {
   buildPartMesh();
   replan();
   $('drop').classList.add('hidden');
-  ['btnPlay', 'btnPrev', 'btnNext', 'btnCsv', 'btnPrint'].forEach((id) => ($(id).disabled = false));
+  ['btnPlay', 'btnPrev', 'btnNext', 'btnCsv'].forEach((id) => ($(id).disabled = false));
   setMode(state.model.bends.length ? state.mode : 'part');
   if (state.mode === 'machine') setCamera('iso');
   state.t = 0; state.playing = true; updatePlayBtn();
@@ -599,8 +604,8 @@ $('sample').addEventListener('change', async (e) => {
   try {
     const r = await fetch(url);
     if (!r.ok) throw new Error(r.status);
-    await loadStepBuffer(await r.arrayBuffer(), url.split('/').pop());
-  } catch (err) { showLoading(null); alert('No se pudo cargar el ejemplo: ' + err.message); }
+    await loadStepBuffer(await r.arrayBuffer(), 'Ejemplo · ' + e.target.selectedOptions[0].text);
+  } catch (err) { showLoading(null); showError('No se pudo cargar el ejemplo: ' + err.message); }
   e.target.value = '';
 });
 const drop = $('drop');
@@ -653,13 +658,14 @@ $('btnCsv').addEventListener('click', () => {
   lines.push(['ciclo_s', p.cycle.toFixed(2)]); lines.push(['piezas_hora', p.piecesPerHour.toFixed(1)]);
   for (const [k, v] of Object.entries(p.cost)) lines.push([`costo_${k}`, v.toFixed(4)]);
   lines.push(['moneda', p.cfg.currency]);
-  const blob = new Blob([lines.map((l) => l.join(',')).join('\n')], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = state.name.replace(/\.(step|stp)$/i, '') + '_proceso.csv';
-  a.click();
+  const csv = lines.map((l) => l.join(',')).join('\n');
+  const btn = $('btnCsv');
+  const done = (msg) => { btn.textContent = msg; setTimeout(() => (btn.textContent = 'Copiar CSV'), 1800); };
+  const fallback = () => { $('csvText').value = csv; $('csvbox').hidden = false; $('csvText').select(); };
+  try { navigator.clipboard.writeText(csv).then(() => done('Copiado ✓'), fallback); } catch { fallback(); }
 });
-$('btnPrint').addEventListener('click', () => { composer.render(); window.print(); });
+$('errClose').addEventListener('click', () => ($('errbox').hidden = true));
+$('csvClose').addEventListener('click', () => ($('csvbox').hidden = true));
 
 // ---------------- bucle ----------------
 const clock = new THREE.Clock();
@@ -683,7 +689,8 @@ machine.drawScreen({ status: 'LISTO' });
 loop();
 
 // pieza por parámetro de URL (?sample=bracket)
-const qs = new URLSearchParams(location.search).get('sample');
-if (qs) { $('sample').value = `samples/${qs}.step`; $('sample').dispatchEvent(new Event('change')); }
+// sin parámetro se abre con el soporte de ejemplo para mostrar la simulación completa
+const qs = new URLSearchParams(location.search).get('sample') || 'bracket';
+if (qs !== 'none') { $('sample').value = `samples/${qs}.step`; $('sample').dispatchEvent(new Event('change')); }
 window.__sim = state;
 window.__dbg = { get part() { return partMesh; }, THREE, camera, controls };

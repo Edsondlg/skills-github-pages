@@ -30,8 +30,7 @@
       <option value="samples/canal.step">Canal con pestaña (3 dobleces)</option>
       <option value="samples/tray.step">Charola (4 dobleces)</option>
     </select>
-    <button id="btnCsv" class="btn" disabled>CSV</button>
-    <button id="btnPrint" class="btn" disabled>Reporte</button>
+    <button id="btnCsv" class="btn" disabled title="Copia la secuencia y costos para pegarlos en Excel">Copiar CSV</button>
   </div>
 </header>
 
@@ -113,6 +112,8 @@
         <label>Plano <input id="foldSlider" type="range" min="0" max="1" step="0.001" value="1"> Formado</label>
         <label class="check"><input id="hl" type="checkbox" checked> Resaltar zonas de doblez</label>
       </div>
+      <div class="errbox" id="errbox" role="alert" hidden><span id="errMsg"></span><button id="errClose" class="btn">Cerrar</button></div>
+      <div class="csvbox" id="csvbox" hidden><p>Copia este texto (Ctrl+C) y pégalo en Excel:</p><textarea id="csvText" readonly></textarea><button id="csvClose" class="btn">Cerrar</button></div>
       <div class="loading" id="loading" hidden><div class="spinner"></div><span id="loadingMsg">Cargando…</span></div>
     </div>
     <div class="transport">
