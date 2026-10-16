@@ -62,6 +62,28 @@ function buildWasm() {
   fs.writeFileSync(path.join(out, 'occt-wasm.js'), `${banner}\nwindow.__OCCT_WASM_GZ_B64__="${gz.toString('base64')}";\n`);
 }
 
+// Versión de un solo archivo (--single): index.html con CSS y scripts incrustados, para
+// compartir o abrir con doble clic sin la carpeta completa.
+function buildSingle() {
+  const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
+  // "</script" dentro del JS cerraría la etiqueta; "<\/script" es equivalente en JS.
+  const inlineJs = (f) => `<script>${read(f).replace(/<\/script/gi, '<\\/script')}</script>`;
+  const swaps = [
+    ['<link rel="stylesheet" href="css/app.css">', () => `<style>${read('css/app.css')}</style>`],
+    ['<script src="build/occt-wasm.js"></script>', () => inlineJs('build/occt-wasm.js')],
+    ['<script src="build/kernel.js"></script>', () => inlineJs('build/kernel.js')],
+    ['<script src="build/app.js"></script>', () => inlineJs('build/app.js')],
+  ];
+  let html = read('index.html');
+  for (const [tag, content] of swaps) {
+    if (html.split(tag).length !== 2) throw new Error(`index.html: no se encontró exactamente una vez ${tag}`);
+    html = html.replace(tag, () => content());
+  }
+  const file = path.join(root, 'Simulador-Plano-3D.html');
+  fs.writeFileSync(file, html);
+  console.log(`Simulador-Plano-3D.html  ${(fs.statSync(file).size / 1024).toFixed(0)} KB`);
+}
+
 const t0 = Date.now();
 await Promise.all([buildApp(), buildKernel()]);
 const wasmOut = path.join(out, 'occt-wasm.js');
@@ -70,4 +92,5 @@ for (const f of ['app.js', 'kernel.js', 'occt-wasm.js']) {
   const s = fs.statSync(path.join(out, f)).size;
   console.log(`build/${f}  ${(s / 1024).toFixed(0)} KB`);
 }
+if (process.argv.includes('--single')) buildSingle();
 console.log(`listo en ${Date.now() - t0} ms`);
