@@ -109,12 +109,13 @@ export function renderSlots(op, F) {
   }
 }
 
-/** Texto del eje de revolución. */
-export function axisText(rv) {
-  const f = (v) => +(+v).toFixed(3);
-  if (rv.axisKind === 'x') return 'Eje X · (0, 0) → (1, 0)';
-  if (rv.axisKind === 'y') return 'Eje Y · (0, 0) → (0, 1)';
-  return `Línea · (${f(rv.axis.p[0])}, ${f(rv.axis.p[1])}) dir (${f(rv.axis.d[0])}, ${f(rv.axis.d[1])})`;
+/** Texto del eje de revolución: punto (en las unidades activas) y dirección unitaria. */
+export function axisText(rv, F) {
+  const d = (v) => String(+(+v).toFixed(4) || 0);
+  const pt = (p) => `(${num(F, p[0])}, ${num(F, p[1])}) ${lenUnit(F)}`;
+  if (rv.axisKind === 'x') return `Eje X · por ${pt([0, 0])} · dir (1, 0)`;
+  if (rv.axisKind === 'y') return `Eje Y · por ${pt([0, 0])} · dir (0, 1)`;
+  return `Línea · por ${pt(rv.axis.p)} · dir (${d(rv.axis.d[0])}, ${d(rv.axis.d[1])})`;
 }
 
 // ───────────── Panel derecho ─────────────

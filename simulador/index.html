@@ -105,6 +105,10 @@
               <div><dt>Regiones</dt><dd id="infoRegions">—</dd></div>
               <div id="infoOpenRow" class="info-warn"><dt>Cadenas abiertas</dt><dd id="infoOpen">—</dd></div>
             </dl>
+            <div id="frameRow" class="frame-row" hidden>
+              <span id="frameInfo" class="frame-info">Marco del plano detectado</span>
+              <label class="switch switch-sm"><input id="chkIncludeFrame" type="checkbox"><span class="switch-track"></span><span class="switch-label">Incluir marco en el modelo</span></label>
+            </div>
 
             <div class="form">
               <label class="row"><span class="row-label">Unidades del plano</span>
@@ -274,7 +278,8 @@
                 <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="clear" aria-label="Quitar ventana de lateral izquierda"><i data-icon="close"></i></button>
               </li>
             </ul>
-            <p class="note"><i data-icon="info"></i><span>La pieza se reconstruye intersectando las siluetas extruidas de cada vista. Define al menos dos ventanas que encuadren la misma pieza; los huecos interiores que no se vean en ninguna vista no se reproducen.</span></p>
+            <p id="mvWarn" class="note note-warn" hidden><i data-icon="warning"></i><span></span></p>
+            <p class="note"><i data-icon="info"></i><span>La pieza se reconstruye intersectando las siluetas extruidas de la planta (vista desde arriba), el alzado (de frente) y las laterales. Encuadra cada vista con su ventana; basta con dos. Da igual que el plano use primer o tercer ángulo: cada vista se alinea por su propia caja envolvente. Los huecos interiores que no se vean en ninguna vista no se reproducen.</span></p>
           </div>
         </div>
       </section>
