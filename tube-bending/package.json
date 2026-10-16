@@ -5,7 +5,7 @@
   "description": "Simulador de doblado rotativo de tubo con mandril a partir de STEP",
   "type": "module",
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test",
     "serve": "node tools/serve.mjs",
     "shot": "node tools/screenshot.mjs",
     "build": "node tools/build.mjs"
