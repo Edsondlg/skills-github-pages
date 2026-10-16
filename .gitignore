@@ -40,3 +40,5 @@ Thumbs.db
 simulador/node_modules/
 simulador/dev/build/
 simulador/test-results/
+simulador/.claude/
+.claude/
