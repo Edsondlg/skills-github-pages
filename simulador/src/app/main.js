@@ -13,6 +13,7 @@ import { detectFormat, importText, importImage, prepareProfile, defaultOpState, 
 import { SAMPLES } from './samples.js';
 import { renderPlano, renderRegions, renderSlots, renderProps, axisText } from './panels.js';
 import { createAppApi } from './app-api.js';
+import { initModes } from './modes-ui.js';
 
 const $ = ui.$;
 const PREFS_KEY = 'plano3d.prefs';
@@ -23,8 +24,8 @@ const HINTS_2D = {
   select: 'Clic en una región para incluirla o excluirla · rueda para zoom',
   measure: 'Clic en dos puntos para medir · Mayús+clic en un círculo para el radio',
   window: 'Arrastra un rectángulo alrededor de una vista',
-  axis: 'Clic en una línea del plano para usarla como eje de revolución',
-  calibrate: 'Clic en dos puntos de distancia conocida',
+  axis: 'Haz clic en la línea de eje (línea de centros)',
+  calibrate: 'Haz clic en dos puntos de distancia conocida (se ajustan a extremos, centros y puntos medios)',
 };
 
 // ───────────── Estado ─────────────
@@ -82,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
       api?._emitMeasure(list, extra);
     },
   });
-  api = createAppApi({ S, kernel, viewer, measure, view2d, actions: { setViewWindow, setRevolveAxis, setImageScale, rebuild: runBuild, pickAxis, loadSample, openFiles } });
+  api = createAppApi({ S, kernel, viewer, measure, view2d, actions: { setViewWindow, setRevolveAxis, setImageScale, rebuild: runBuild, pickAxis, loadSample, openFiles, setMode2d, setFrameLoops } });
   window.__app = api;
 
   initFields(prefs);
@@ -90,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initOpen(examplesMenu);
   initOperation();
   initViews();
+  initModes(api);
   ui.setEmpty('2d', true);
   ui.setEmpty('3d', true);
   ui.setPropsVisible(false);
@@ -282,6 +284,7 @@ function loadDrawing(drawing, suggested) {
   S.hiddenLayers = new Set();
   S.selected = -1;
   S.openRegions = new Set();
+  S.frameLoops = null;
   if (drawing.format !== 'image') S.image = null;
   $('selDrawingUnits').value = 'auto';
   $('chkIgnoreAux').checked = true;
@@ -304,6 +307,7 @@ function loadDrawing(drawing, suggested) {
   refresh2D(true);
   renderAllPanels();
   updateWarnings();
+  api._emitProfile(true);
   scheduleBuild(true);
 }
 
@@ -317,6 +321,7 @@ function computeProfile() {
       ignoreDashed: $('chkIgnoreAux').checked,
       hiddenLayers: [...S.hiddenLayers],
       tol: fields.joinTol.get(),
+      frameLoops: S.frameLoops ?? null,
     });
     return true;
   } catch (e) {
@@ -342,6 +347,7 @@ function reprocess(retrace = false) {
   refresh2D(true);
   renderAllPanels();
   updateWarnings();
+  api._emitProfile(false);
   scheduleBuild();
 }
 
@@ -407,14 +413,14 @@ function setRevolveAxis(axis) {
   }
   S.op.revolve = { ...S.op.revolve, ...rv };
   $('selAxis').value = rv.axisKind;
-  $('axisReadout').textContent = axisText(S.op.revolve);
+  $('axisReadout').textContent = axisText(S.op.revolve, S.F);
   editOp(() => {});
 }
 
 /** Hook: elegir el eje con un clic en una línea de la vista 2D. */
 function pickAxis() {
   if (!S.profile) return;
-  ui.setActiveTab(ui.getActiveTab() === '3d' ? 'split' : ui.getActiveTab());
+  if (ui.getActiveTab() === '3d') ui.setActiveTab('2d');
   setMode2d('axis');
 }
 
@@ -423,6 +429,12 @@ function setViewWindow(role, box) {
   S.op.multiview = { ...S.op.multiview, windows: { ...S.op.multiview.windows, [role]: box ? { ...box } : null } };
   renderSlots(S.op, S.F);
   editOp(() => {});
+}
+
+/** Marco del plano: null = detección automática; [] = incluirlo en el modelo. */
+function setFrameLoops(v) {
+  S.frameLoops = v;
+  reprocess();
 }
 
 function setImageScale(mmPerPx) {
@@ -443,7 +455,7 @@ function syncOpControls() {
   fields.ft.set(op.fillets.top || 0);
   fields.ct.set(op.fillets.chamferTop || 0);
   $('selAxis').value = op.revolve.axisKind;
-  $('axisReadout').textContent = axisText(op.revolve);
+  $('axisReadout').textContent = axisText(op.revolve, S.F);
   fields.angle.set(op.revolve.angleDeg ?? 360);
   ui.setRange($('rngAngle'), Math.round(op.revolve.angleDeg ?? 360));
 }
@@ -541,18 +553,7 @@ function initOperation() {
     if (!e.target.closest('input, select')) selectRegion(i);
   });
 
-  // Ranuras de multivista: «Borrar»; «Definir» lo completa la parte 2 (modo ventana)
-  $('panelMultiview').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-action]');
-    const slot = b && b.closest('.slot[data-role]');
-    if (!slot) return;
-    if (b.dataset.action === 'clear') setViewWindow(slot.dataset.role, null);
-    else if (b.dataset.action === 'define' && S.profile) {
-      S.pendingWindowRole = slot.dataset.role;
-      setMode2d('window');
-    }
-  });
-
+  // Ranuras de multivista, calibración y marco: modes-ui.js
   $('btnGenerate').addEventListener('click', () => runBuild());
   ui.onShortcut('Enter', () => runBuild(), { ctrl: true });
 }
@@ -572,6 +573,8 @@ function scheduleBuild(now = false) {
     return;
   }
   if (!$('chkAutoUpdate').checked) return;
+  // Multivista con menos de dos ventanas: se espera a que el usuario defina la segunda.
+  if (S.op?.mode === 'multiview' && ROLES.filter((r) => S.op.multiview.windows[r]).length < 2) return;
   autoTimer = setTimeout(() => runBuild(), AUTO_MS);
 }
 
@@ -674,6 +677,7 @@ function setUnits(v) {
   if (S.profile) {
     renderRegions(S.profile, S.op, S.F, { selected: S.selected, open: S.openRegions });
     renderSlots(S.op, S.F);
+    $('axisReadout').textContent = axisText(S.op.revolve, S.F);
   }
   if (S.build) recomputeProps();
 }
@@ -708,12 +712,6 @@ function initViews() {
   });
   view2d.on('axisPick', (e) => {
     setRevolveAxis({ p: e.p, d: e.d });
-    setMode2d('select');
-  });
-  view2d.on('window', (box) => {
-    if (!S.pendingWindowRole) return;
-    setViewWindow(S.pendingWindowRole, box);
-    S.pendingWindowRole = null;
     setMode2d('select');
   });
   view2d.on('cursor', (c) => {

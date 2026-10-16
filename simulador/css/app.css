@@ -794,3 +794,15 @@ input[type="checkbox"].chk:checked::after, .check input[type="checkbox"]:checked
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
 #btnGenerate.is-busy { cursor: progress; opacity: 0.8; }
+
+/* ───────────── Modos: marco del plano, avisos de multivista, calibración ───────────── */
+.frame-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--warning); border-radius: var(--r-sm); background: var(--warning-soft); }
+.frame-row[hidden] { display: none; }
+.frame-info { color: var(--warning); font-size: var(--fs-sm); font-weight: 500; }
+.note-warn { background: var(--warning-soft); border-color: var(--warning); }
+.note-warn .icon { color: var(--warning); }
+.note[hidden] { display: none; }
+.calib-form { gap: 12px; min-width: min(420px, 80vw); }
+.calib-measured { color: var(--text-2); font-size: var(--fs-sm); }
+.calib-error { color: var(--danger); font-size: var(--fs-sm); }
+.calib-actions { display: flex; justify-content: flex-end; gap: 8px; }
