@@ -30,10 +30,65 @@ test('caja 100x50x10 en A36: masa e inercia', () => {
   const Izz = (50000 * (100 ** 2 + 50 ** 2)) / 12;
   close(d.inertia.Izz, 7.85 * 1e-6 * Izz);
   close(d.inertiaUnits.kgm2.Izz, d.inertia.Izz * 1e-6);
-  close(d.inertiaUnits.lbin2.Izz, d.inertia.Izz * 3.41717);
   close(d.gyration.z, Math.sqrt(d.inertia.Izz / d.mass.kg));
   close(d.bbox.diagonal, Math.hypot(100, 50, 10));
   assert.equal(d.sheet, null);
+});
+
+test('inercia imperial: 1 kg·m² = 3417.17 lb·in²; placa 100×100×10 de acero ≈ 4.482 lb·in²', () => {
+  // ρ = 1 g/cm³ → k = 1e-6; Izz bruto 1e12 mm⁵ → 1e6 kg·mm² = 1 kg·m².
+  const b = boxBuild(10, 10, 10);
+  b.props.inertia = { Ixx: 0, Iyy: 0, Izz: 1e12, Pxy: 0, Pxz: 0, Pyz: 0 };
+  const d = computePartData({ build: b, material: { id: 'u', name: 'U', density: 1 }, mode: 'multiview' });
+  close(d.inertiaUnits.kgm2.Izz, 1);
+  close(d.inertiaUnits.lbin2.Izz, 3417.17, 1e-4);
+  // Cálculo independiente en lb e in: Izz = m·(a² + b²)/12.
+  const steel = customMaterial(7.87, 'Acero');
+  const p = computePartData({ build: boxBuild(100, 100, 10), material: steel, mode: 'multiview' });
+  const mLb = 0.787 / 0.45359237, aIn = 100 / 25.4;
+  const expected = (mLb * 2 * aIn * aIn) / 12;
+  close(expected, 4.482, 1e-3);
+  close(p.inertiaUnits.lbin2.Izz, expected, 1e-6);
+  close(p.principal.momentsLbin2[0], p.principal.moments[0] * 0.00341717, 1e-5);
+  assert.match(makeFormatter('imperial').inertia(p.inertia.Izz), /^4\.48\d lb·in²$/);
+});
+
+test('lámina: margen negativo cuenta como 0; peso neto = masa del kernel; solo agujeros pasantes', () => {
+  const al = findMaterial('al-5052-h32');
+  const profile = {
+    netArea: 10000, perimeterOuter: 400, perimeterInner: 0, loops: 2,
+    holes: [{ d: 40, c: [50, 50], op: 'blind' }], bbox2d: { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+  };
+  const build = boxBuild(100, 100, 4);
+  build.props.volume = 40000 - 400 * Math.PI * 2; // ciego Ø40 × 2 mm
+  const d = computePartData({ build, material: al, profile, mode: 'extrude', thickness: 4, blankMargin: -5 });
+  close(d.sheet.blankWidth, 100);
+  close(d.sheet.blankArea, 10000);
+  close(d.sheet.netWeight.g, d.mass.g);
+  assert.ok(d.sheet.scrapWeight.g > 0);
+  assert.equal(d.sheet.holes, 0);
+  assert.equal(d.sheet.minHoleDiameter, null);
+  // sheetApplicable = false: sin lámina y con nota.
+  const n = computePartData({ build, material: al, profile, mode: 'extrude', thickness: 4, sheetApplicable: false, pricePerKg: 5 });
+  assert.equal(n.sheet, null);
+  assert.equal(n.sheetNote, 'Datos de lámina no aplican: hay regiones con alturas distintas.');
+  assert.equal(n.cost.blankCost, null);
+  assert.ok(toCSV(n).includes('Datos de lámina no aplican'));
+});
+
+test('CSV: texto con fórmula se neutraliza; números negativos intactos', () => {
+  const b = boxBuild(10, 10, 10);
+  b.props.bbox = { min: [-5, -2.5, 0], max: [5, 7.5, 10], size: [10, 10, 10] };
+  b.props.centroid = [-1.5, 0, 5];
+  const d = computePartData({ build: b, material: customMaterial(2, '=HYPERLINK("x")'), mode: 'multiview' });
+  const csv = toCSV(d, [{ title: 'm', text: '@SUM(1)' }, { title: 'n', text: '-cmd' }, { title: 'o', text: '\tx' }]);
+  assert.ok(csv.includes(`"'=HYPERLINK(""x"")"`), csv);
+  assert.ok(!/,=HYPERLINK|,"=HYPERLINK/.test(csv));
+  assert.ok(csv.includes(",'@SUM(1),"));
+  assert.ok(csv.includes(",'-cmd,"));
+  assert.ok(csv.includes(",'\tx,"));
+  assert.ok(csv.includes('Geometría: Mínimo de la caja,-5; -2.5; 0,mm'));
+  assert.ok(csv.includes('Centro de masa e inercia: Centro de masa,-1.5; 0; 5,mm'));
 });
 
 test('datos de lámina y fuerza de corte', () => {

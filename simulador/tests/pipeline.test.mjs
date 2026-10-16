@@ -181,15 +181,19 @@ const synthetic = () => ({
   texts: [], warnings: [], stats: {},
 });
 
+const FRAME_WARN = 'Se detectó el marco del plano y se excluyó del modelo (haz clic en él para incluirlo).';
+
 test('marco del plano: se excluye y se avisa; capas congeladas/ocultas se descartan', () => {
   const profile = prepareProfile(synthetic());
   assert.equal(profile.stats.hiddenRemoved, 4);
-  assert.equal(profile.regions.length, 3);
+  // El marco de doble línea sale de las regiones; sus contornos siguen en loops.
+  assert.equal(profile.regions.length, 2);
+  assert.deepEqual(profile.frameLoops.map((i) => profile.loopInfos[i].area).sort((a, b) => a - b), [400 * 277, 420 * 297]);
+  assert.ok(profile.frameLoops.every((i) => profile.nodes[i].frame));
+  assert.ok(profile.warnings.includes(FRAME_WARN));
   const op = defaultOpState(profile);
-  const frame = profile.regions.findIndex((r) => profile.loopInfos[r.outer].area === 420 * 297);
-  assert.equal(op.regions[frame].included, false);
   assert.equal(op.regions.filter((r) => r.included).length, 2);
-  assert.deepEqual(op.warnings, ['Se excluyó un posible marco del plano']);
+  assert.deepEqual(op.warnings, []);
   op.thickness = 3;
   const job = makeJob(profile, op);
   assert.equal(job.regions.length, 2);
@@ -199,10 +203,146 @@ test('marco del plano: se excluye y se avisa; capas congeladas/ocultas se descar
   // Ocultar la capa del marco deja solo las piezas, sin aviso.
   const p2 = prepareProfile(synthetic(), { hiddenLayers: ['MARCO'] });
   assert.equal(p2.regions.length, 2);
+  assert.deepEqual(p2.frameLoops, []);
+  assert.ok(!p2.warnings.includes(FRAME_WARN));
   assert.deepEqual(defaultOpState(p2).warnings, []);
   // Una placa rectangular con agujeros simples no es marco.
   const plate = prepareProfile({ ...synthetic(), segments: [...rectSegs(0, 0, 100, 50), { type: 'circle', c: [20, 25], r: 5, ccw: true, meta: { layer: 'CONTORNO' } }, { type: 'circle', c: [80, 25], r: 5, ccw: true, meta: { layer: 'CONTORNO' } }] });
   assert.ok(defaultOpState(plate).regions.every((r) => r.included));
+});
+
+const C = (x, y, r) => ({ type: 'circle', c: [x, y], r, ccw: true, meta: { layer: 'CONTORNO' } });
+const drw = (segments) => ({ ...synthetic(), segments });
+const regionOf = (profile, area) => profile.regions.findIndex((r) => Math.abs(profile.loopInfos[r.outer].area - area) < 1e-6 * area);
+
+test('(a) placa con agujeros de círculos concéntricos: no es marco; islas concéntricas excluidas', () => {
+  const profile = prepareProfile(drw([...rectSegs(0, 0, 200, 100), C(50, 50, 8), C(50, 50, 4.5), C(150, 50, 8), C(150, 50, 4.5)]));
+  assert.deepEqual(profile.frameLoops, []);
+  assert.ok(!profile.warnings.includes(FRAME_WARN));
+  assert.equal(profile.regions.length, 3);
+  const op = defaultOpState(profile);
+  const plate = regionOf(profile, 20000);
+  assert.equal(op.regions[plate].included, true);
+  assert.equal(profile.regions[plate].holes.length, 2);
+  const islands = op.regions.filter((_, i) => i !== plate);
+  assert.equal(islands.length, 2);
+  assert.ok(islands.every((r) => r.included === false));
+  assert.deepEqual(op.warnings, ['Se ignoraron 2 círculos concéntricos dentro de agujeros (avellanados o roscas)']);
+  const r = K.build(makeJob(profile, op));
+  close(r.props.volume, 2 * (20000 - 2 * 64 * PI), 1e-9);
+});
+
+test('(b) A3 de doble borde con una pieza: marco detectado y sin masa', () => {
+  const profile = prepareProfile(drw([...rectSegs(0, 0, 420, 297, 'MARCO'), ...rectSegs(10, 10, 410, 287, 'MARCO'), ...rectSegs(100, 100, 200, 150)]));
+  assert.equal(profile.frameLoops.length, 2);
+  assert.ok(profile.warnings.includes(FRAME_WARN));
+  assert.equal(profile.regions.length, 1);
+  assert.equal(profile.loops.length, 3);
+  const op = defaultOpState(profile);
+  assert.equal(op.regions[0].included, true);
+  close(profile.loopInfos[profile.regions[0].outer].area, 5000);
+  const build = K.build(makeJob(profile, op));
+  const d = computeAll({ build, profile, op, material: findMaterial('acero-a36') });
+  close(d.mass.g, 5000 * 2 * 7.85 / 1000, 1e-9);
+  // frameLoops explícito (vacío) o detectFrame=false: el marco vuelve a ser región.
+  for (const o of [{ frameLoops: [] }, { detectFrame: false }]) {
+    const p = prepareProfile(drw([...rectSegs(0, 0, 420, 297, 'MARCO'), ...rectSegs(10, 10, 410, 287, 'MARCO'), ...rectSegs(100, 100, 200, 150)]), o);
+    assert.deepEqual(p.frameLoops, []);
+    assert.equal(p.regions.length, 2);
+    assert.ok(!p.warnings.includes(FRAME_WARN));
+  }
+  // frameLoops explícito con un solo contorno: el borde interior pasa a ser región y la pieza, su agujero.
+  const outer = profile.frameLoops.find((i) => profile.loopInfos[i].area === 420 * 297);
+  const p3 = prepareProfile(drw([...rectSegs(0, 0, 420, 297, 'MARCO'), ...rectSegs(10, 10, 410, 287, 'MARCO'), ...rectSegs(100, 100, 200, 150)]), { frameLoops: [outer, 99, -1] });
+  assert.deepEqual(p3.frameLoops, [outer]);
+  assert.equal(p3.regions.length, 1);
+  close(p3.loopInfos[p3.regions[0].outer].area, 400 * 277);
+  assert.equal(p3.regions[0].holes.length, 1);
+  close(p3.loopInfos[p3.regions[0].holes[0]].area, 5000);
+});
+
+test('(c) marco de una línea con una pieza de dos agujeros Ø10: la pieza es región con 2 agujeros', () => {
+  const profile = prepareProfile(drw([...rectSegs(0, 0, 420, 297, 'MARCO'), ...rectSegs(50, 50, 150, 100), C(75, 75, 5), C(125, 75, 5)]));
+  assert.equal(profile.frameLoops.length, 1);
+  close(profile.loopInfos[profile.frameLoops[0]].area, 420 * 297);
+  assert.equal(profile.regions.length, 1);
+  const r0 = profile.regions[0];
+  close(profile.loopInfos[r0.outer].area, 5000);
+  assert.equal(r0.holes.length, 2);
+  assert.ok(r0.holes.every((h) => profile.loopInfos[h].circle && Math.abs(profile.loopInfos[h].circle.r - 5) < 1e-9));
+  assert.equal(profile.nodes[r0.outer].parent, -1);
+  const op = defaultOpState(profile);
+  close(K.build(makeJob(profile, op)).props.volume, 2 * (5000 - 50 * PI), 1e-9);
+});
+
+test('(d) junta rectangular (rectángulo con agujero rectangular, sin islas) no es marco', () => {
+  const profile = prepareProfile(drw([...rectSegs(0, 0, 100, 100), ...rectSegs(10, 10, 90, 90)]));
+  assert.deepEqual(profile.frameLoops, []);
+  assert.equal(profile.regions.length, 1);
+  assert.equal(profile.regions[0].holes.length, 1);
+  assert.equal(defaultOpState(profile).regions[0].included, true);
+});
+
+test('alturas distintas por región: sin datos de lámina', () => {
+  const profile = prepareProfile(drw([...rectSegs(0, 0, 100, 100), ...rectSegs(200, 0, 300, 100)]));
+  const op = defaultOpState(profile);
+  op.thickness = 2;
+  const mat = findMaterial('acero-a36');
+  assert.ok(computeAll({ build: K.build(makeJob(profile, op)), profile, op, material: mat }).sheet);
+  op.regions[1].height = 20;
+  const build = K.build(makeJob(profile, op));
+  const d = computeAll({ build, profile, op, material: mat, pricePerKg: 10 });
+  assert.equal(d.sheet, null);
+  assert.equal(d.sheetNote, 'Datos de lámina no aplican: hay regiones con alturas distintas.');
+  close(d.mass.g, (10000 * 2 + 10000 * 20) * 7.85 / 1000, 1e-9);
+  // Un z0 distinto también cambia el apilado.
+  const op2 = defaultOpState(profile);
+  op2.regions[1].z0 = 5;
+  assert.equal(computeAll({ build: K.build(makeJob(profile, op2)), profile, op: op2, material: mat }).sheet, null);
+});
+
+test("agujero 'none' con isla dentro: la isla queda en material macizo", () => {
+  const profile = prepareProfile(drw([...rectSegs(0, 0, 100, 100), C(50, 50, 10), C(50, 50, 5)]));
+  const op = defaultOpState(profile);
+  const plate = regionOf(profile, 10000), island = 1 - plate;
+  op.regions[island].included = true;
+  op.regions[plate].holes[0].op = 'none';
+  const build = K.build(makeJob(profile, op));
+  close(build.props.volume, 20000, 1e-9);
+  assert.equal(analyticVolume(profile, op), 20000);
+  const s = profileSummary(profile, op);
+  assert.equal(s.netArea, 10000);
+  assert.equal(s.perimeterInner, 0);
+  assert.equal(s.holes.length, 0);
+  close(s.perimeterOuter, 400);
+  const d = computeAll({ build, profile, op, material: findMaterial('acero-a36') });
+  assert.ok(d.sheet.utilization <= 100 + 1e-9, `aprovechamiento ${d.sheet.utilization}`);
+  assert.ok(d.sheet.scrapWeight.g >= -1e-9);
+  close(d.sheet.cutLength, 400);
+  // Isla más alta que la placa: no deducible analíticamente.
+  op.regions[island].height = 5;
+  assert.equal(analyticVolume(profile, op), null);
+});
+
+test('agujero ciego: peso neto = masa del kernel y no cuenta como agujero', () => {
+  const profile = prepareProfile(drw([...rectSegs(0, 0, 100, 100), C(50, 50, 20)]));
+  const op = { ...defaultOpState(profile), thickness: 4 };
+  op.regions[0].holes[0] = { op: 'blind', depth: 2 };
+  const build = K.build(makeJob(profile, op));
+  close(build.props.volume, 40000 - 400 * PI * 2, 1e-9);
+  const d = computeAll({ build, profile, op, material: findMaterial('acero-a36') });
+  close(d.sheet.netWeight.g, d.mass.g, 1e-12);
+  assert.equal(d.sheet.holes, 0);
+  assert.equal(d.sheet.minHoleDiameter, null);
+});
+
+test('eje por defecto: trazos de una capa oculta no cuentan', () => {
+  const base = synthetic();
+  const d = { ...base, layers: [...base.layers, { name: 'EJES' }], segments: [...base.segments, { type: 'line', p0: [30, 40], p1: [0, 0], meta: { layer: 'EJES', dashed: true } }] };
+  assert.equal(defaultOpState(prepareProfile(d)).revolve.axisKind, 'line');
+  const p = prepareProfile(d, { hiddenLayers: ['EJES'] });
+  assert.equal(p.axisLines.length, 0);
+  assert.equal(defaultOpState(p).revolve.axisKind, 'x');
 });
 
 test('eje por defecto: sin trazos → eje X; trazo oblicuo → línea normalizada', () => {
