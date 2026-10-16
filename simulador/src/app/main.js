@@ -418,7 +418,15 @@ function computeProfile() {
 /** Cambió una opción del paso 1: rehace el perfil conservando las elecciones de la operación. */
 function reprocess(retrace = false) {
   if (!S.drawing) return;
-  if (retrace && S.image) S.drawing = traceStored(S.mmPerPx);
+  if (retrace && S.image) {
+    try {
+      S.drawing = traceStored(S.mmPerPx);
+    } catch (e) {
+      // El trazado anterior sigue siendo válido: se conserva y se informa.
+      ui.toast(`No se pudo volver a trazar la imagen: ${e.message || e}`, { type: 'error' });
+      return;
+    }
+  }
   if (!computeProfile()) {
     // Sin perfil: error visible, nada que generar ni exportar; la op se conserva para reintentar.
     view2d.setDrawing({}, {});
