@@ -1,13 +1,580 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>Simulador Plano 2D → Pieza 3D</title>
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<div id="app"></div>
+<div id="app" class="app">
+
+  <!-- ============ Barra superior ============ -->
+  <header id="topbar" class="topbar">
+    <div class="brand">
+      <button id="btnLeftDrawer" class="btn btn-icon btn-ghost drawer-toggle drawer-toggle-left" type="button" aria-label="Mostrar panel de plano" data-tip="Panel de plano"><i data-icon="panel-left"></i></button>
+      <span class="brand-mark"><i data-icon="logo" data-size="18"></i></span>
+      <span class="brand-text">
+        <span class="brand-title">Plano → Pieza 3D</span>
+        <span class="brand-sub">Simulador CAD</span>
+      </span>
+    </div>
+
+    <div class="topbar-center">
+      <div id="fileChip" class="chip file-chip" data-state="empty" title="">
+        <i data-icon="file"></i>
+        <span id="fileName" class="file-name">Sin plano</span>
+        <span id="fileFormat" class="badge" hidden></span>
+      </div>
+      <div id="kernelChip" class="chip kernel-chip" data-state="loading" role="status" aria-live="polite">
+        <span class="status-dot"></span>
+        <span id="kernelText">Cargando motor CAD…</span>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <button id="btnOpen" class="btn btn-primary" type="button" data-tip="Abrir plano" data-kbd="Ctrl+O"><i data-icon="open"></i><span class="btn-label">Abrir plano</span></button>
+      <input id="fileInput" type="file" accept=".dxf,.svg,.png,.jpg,.jpeg,.bmp,.webp" hidden>
+
+      <div class="dropdown">
+        <button id="btnExamples" class="btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menuExamples"><i data-icon="examples"></i><span class="btn-label">Ejemplos</span><i data-icon="chevron" data-size="14" class="caret"></i></button>
+        <div id="menuExamples" class="menu" role="menu" hidden></div>
+      </div>
+
+      <div class="dropdown">
+        <button id="btnExport" class="btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menuExport"><i data-icon="export"></i><span class="btn-label">Exportar</span><i data-icon="chevron" data-size="14" class="caret"></i></button>
+        <div id="menuExport" class="menu menu-right" role="menu" hidden>
+          <div class="menu-label">Modelo 3D</div>
+          <button class="menu-item" role="menuitem" type="button" data-value="step"><i data-icon="cube"></i><span>STEP (exacto)</span><span class="menu-meta">.step</span></button>
+          <button class="menu-item" role="menuitem" type="button" data-value="stl"><i data-icon="download"></i><span>STL binario</span><span class="menu-meta">.stl</span></button>
+          <button class="menu-item" role="menuitem" type="button" data-value="stl-ascii"><i data-icon="download"></i><span>STL ASCII</span><span class="menu-meta">.stl</span></button>
+          <button class="menu-item" role="menuitem" type="button" data-value="obj"><i data-icon="download"></i><span>OBJ</span><span class="menu-meta">.obj</span></button>
+          <button class="menu-item" role="menuitem" type="button" data-value="glb"><i data-icon="download"></i><span>GLB (metros)</span><span class="menu-meta">.glb</span></button>
+          <button class="menu-item" role="menuitem" type="button" data-value="ply"><i data-icon="download"></i><span>PLY</span><span class="menu-meta">.ply</span></button>
+          <div class="menu-sep" role="separator"></div>
+          <div class="menu-label">Reportes y datos</div>
+          <button class="menu-item" role="menuitem" type="button" data-value="report-print"><i data-icon="printer"></i><span>Reporte (imprimir / PDF)</span></button>
+          <button class="menu-item" role="menuitem" type="button" data-value="report-html"><i data-icon="code"></i><span>Reporte HTML</span><span class="menu-meta">.html</span></button>
+          <button class="menu-item" role="menuitem" type="button" data-value="csv"><i data-icon="table"></i><span>CSV de propiedades</span><span class="menu-meta">.csv</span></button>
+          <button class="menu-item" role="menuitem" type="button" data-value="json"><i data-icon="code"></i><span>JSON</span><span class="menu-meta">.json</span></button>
+          <button class="menu-item" role="menuitem" type="button" data-value="png"><i data-icon="camera"></i><span>Captura PNG</span><span class="menu-meta">.png</span></button>
+        </div>
+      </div>
+
+      <div id="unitsSeg" class="seg seg-sm" role="radiogroup" aria-label="Unidades de visualización">
+        <button type="button" data-value="mm" aria-pressed="true">mm</button>
+        <button type="button" data-value="in" aria-pressed="false">in</button>
+      </div>
+      <button id="btnTheme" class="btn btn-icon btn-ghost" type="button" aria-label="Cambiar tema" data-tip="Tema claro / oscuro"><i data-icon="sun" class="only-dark"></i><i data-icon="moon" class="only-light"></i></button>
+      <button id="btnHelp" class="btn btn-icon btn-ghost" type="button" aria-label="Ayuda" data-tip="Ayuda y atajos" data-kbd="?"><i data-icon="help"></i></button>
+      <button id="btnRightDrawer" class="btn btn-icon btn-ghost drawer-toggle drawer-toggle-right" type="button" aria-label="Mostrar propiedades" data-tip="Propiedades"><i data-icon="panel-right"></i></button>
+    </div>
+  </header>
+
+  <!-- ============ Panel izquierdo: pasos ============ -->
+  <aside id="sidebarLeft" class="sidebar sidebar-left" aria-label="Plano y operación">
+    <div class="sidebar-scroll">
+
+      <!-- Paso 1: Plano -->
+      <section id="stepPlano" class="step" data-collapsible data-state="empty">
+        <button class="step-head collapsible-head" type="button" aria-expanded="true">
+          <span class="step-num">1</span>
+          <span class="step-title">Plano</span>
+          <span id="stepPlanoSummary" class="step-summary">sin plano</span>
+          <i data-icon="chevron" data-size="14" class="collapse-caret"></i>
+        </button>
+        <div class="step-body collapsible-body">
+          <div id="planoEmpty" class="plano-empty">
+            <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Abrir o arrastrar un plano">
+              <span class="dropzone-icon"><i data-icon="upload" data-size="22"></i></span>
+              <span class="dropzone-title">Arrastra un DXF, SVG o imagen</span>
+              <span class="dropzone-sub">DXF · SVG · PNG · JPG · BMP · WEBP</span>
+              <span class="dropzone-sub">o haz clic para elegir un archivo</span>
+            </div>
+            <button id="btnDropExample" class="btn btn-link" type="button"><i data-icon="examples"></i>o abre un ejemplo</button>
+          </div>
+
+          <div id="planoInfo" class="plano-info" hidden>
+            <dl class="info-grid">
+              <div><dt>Formato</dt><dd id="infoFormat">—</dd></div>
+              <div><dt>Unidades detectadas</dt><dd id="infoUnits">—</dd></div>
+              <div><dt>Escala a mm</dt><dd id="infoScale">—</dd></div>
+              <div><dt>Entidades</dt><dd id="infoEntities">—</dd></div>
+              <div><dt>Contornos cerrados</dt><dd id="infoClosed">—</dd></div>
+              <div><dt>Regiones</dt><dd id="infoRegions">—</dd></div>
+              <div id="infoOpenRow" class="info-warn"><dt>Cadenas abiertas</dt><dd id="infoOpen">—</dd></div>
+            </dl>
+
+            <div class="form">
+              <label class="row"><span class="row-label">Unidades del plano</span>
+                <select id="selDrawingUnits" class="select">
+                  <option value="auto">Automático</option>
+                  <option value="mm">mm</option>
+                  <option value="cm">cm</option>
+                  <option value="m">m</option>
+                  <option value="in">in</option>
+                  <option value="ft">ft</option>
+                </select>
+              </label>
+              <label class="row"><span class="row-label" data-tip="Distancia máxima para unir extremos de líneas">Tolerancia de unión</span>
+                <span class="num-field"><input id="inpJoinTol" type="text" inputmode="decimal" value="0.010" aria-label="Tolerancia de unión"><span class="unit">mm</span></span>
+              </label>
+              <label class="switch"><input id="chkIgnoreAux" type="checkbox" checked><span class="switch-track"></span><span class="switch-label">Ignorar líneas de eje y ocultas</span></label>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-head"><i data-icon="layers"></i><span>Capas</span><span id="layerCount" class="count-badge">0</span></div>
+              <ul id="layerList" class="item-list layer-list" data-empty="Sin capas"></ul>
+            </div>
+
+            <div id="imageSection" class="subsection" hidden>
+              <div class="subsection-head"><i data-icon="image"></i><span>Imagen</span></div>
+              <div class="form">
+                <div class="row"><span class="row-label">Umbral</span>
+                  <span class="range-field">
+                    <input id="rngThreshold" class="range" type="range" min="0" max="255" step="1" value="128" aria-label="Umbral">
+                    <output id="thresholdValue" class="range-out">128</output>
+                  </span>
+                </div>
+                <div class="row row-split">
+                  <label class="check"><input id="chkThresholdAuto" type="checkbox" checked><span>Umbral automático</span></label>
+                  <label class="switch"><input id="chkInvert" type="checkbox"><span class="switch-track"></span><span class="switch-label">Invertir</span></label>
+                </div>
+                <label class="row"><span class="row-label">Escala (mm/px)</span>
+                  <span class="num-field"><input id="inpPxScale" type="text" inputmode="decimal" value="0.2500" aria-label="Escala en mm por píxel"><span class="unit">mm/px</span></span>
+                </label>
+                <button id="btnCalibrate" class="btn btn-block" type="button"><i data-icon="calibrate"></i>Calibrar con 2 puntos</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Paso 2: Operación -->
+      <section id="stepOp" class="step" data-collapsible>
+        <button class="step-head collapsible-head" type="button" aria-expanded="true">
+          <span class="step-num">2</span>
+          <span class="step-title">Operación</span>
+          <span id="stepOpSummary" class="step-summary">Extrusión</span>
+          <i data-icon="chevron" data-size="14" class="collapse-caret"></i>
+        </button>
+        <div class="step-body collapsible-body">
+          <div id="opSeg" class="seg seg-block" role="radiogroup" aria-label="Operación">
+            <button type="button" data-value="extrude" aria-pressed="true"><i data-icon="extrude"></i>Extrusión</button>
+            <button type="button" data-value="revolve" aria-pressed="false"><i data-icon="revolve"></i>Revolución</button>
+            <button type="button" data-value="multiview" aria-pressed="false"><i data-icon="multiview"></i>Multivista</button>
+          </div>
+
+          <!-- Extrusión -->
+          <div id="panelExtrude" class="op-panel" data-panel-for="opSeg" data-panel="extrude">
+            <div class="form">
+              <div class="row"><span class="row-label">Espesor</span>
+                <span class="num-field"><input id="inpThickness" type="text" inputmode="decimal" value="2.000" aria-label="Espesor"><span class="unit">mm</span></span>
+              </div>
+              <label class="row"><span class="row-label">Calibre</span>
+                <select id="selGauge" class="select">
+                  <option value="">— Personalizado —</option>
+                  <optgroup label="Lámina de acero">
+                    <option value="3.416">10 ga · 3.416 mm</option>
+                    <option value="3.038">11 ga · 3.038 mm</option>
+                    <option value="2.657">12 ga · 2.657 mm</option>
+                    <option value="2.278">13 ga · 2.278 mm</option>
+                    <option value="1.897">14 ga · 1.897 mm</option>
+                    <option value="1.519">16 ga · 1.519 mm</option>
+                    <option value="1.214">18 ga · 1.214 mm</option>
+                    <option value="0.912">20 ga · 0.912 mm</option>
+                    <option value="0.759">22 ga · 0.759 mm</option>
+                    <option value="0.607">24 ga · 0.607 mm</option>
+                    <option value="0.455">26 ga · 0.455 mm</option>
+                  </optgroup>
+                </select>
+              </label>
+              <div id="thicknessChips" class="chips" role="group" aria-label="Espesores rápidos">
+                <button type="button" class="chip-btn" data-value="0.8">0.8</button>
+                <button type="button" class="chip-btn" data-value="1">1.0</button>
+                <button type="button" class="chip-btn" data-value="1.5">1.5</button>
+                <button type="button" class="chip-btn" data-value="2">2.0</button>
+                <button type="button" class="chip-btn" data-value="3">3.0</button>
+                <button type="button" class="chip-btn" data-value="5">5.0</button>
+                <button type="button" class="chip-btn" data-value="10">10</button>
+              </div>
+              <label class="switch"><input id="chkSymmetric" type="checkbox"><span class="switch-track"></span><span class="switch-label">Simétrico respecto a Z=0</span></label>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-head"><i data-icon="area"></i><span>Regiones</span><span id="regionCount" class="count-badge">0</span></div>
+              <ul id="regionList" class="item-list region-list" data-empty="Carga un plano con contornos cerrados"></ul>
+            </div>
+
+            <div class="subsection">
+              <div class="subsection-head"><span>Acabados</span></div>
+              <div class="form">
+                <div class="row"><span class="row-label">Redondeo aristas verticales</span>
+                  <span class="num-field num-field-sm"><span class="prefix">R</span><input id="inpFilletVertical" type="text" inputmode="decimal" value="0" aria-label="Radio de redondeo de aristas verticales"><span class="unit">mm</span></span>
+                </div>
+                <div class="row"><span class="row-label">Redondeo arista superior</span>
+                  <span class="num-field num-field-sm"><span class="prefix">R</span><input id="inpFilletTop" type="text" inputmode="decimal" value="0" aria-label="Radio de redondeo de arista superior"><span class="unit">mm</span></span>
+                </div>
+                <div class="row"><span class="row-label">Chaflán superior</span>
+                  <span class="num-field num-field-sm"><span class="prefix">C</span><input id="inpChamferTop" type="text" inputmode="decimal" value="0" aria-label="Chaflán superior"><span class="unit">mm</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Revolución -->
+          <div id="panelRevolve" class="op-panel" data-panel-for="opSeg" data-panel="revolve" hidden>
+            <div class="form">
+              <label class="row"><span class="row-label">Eje</span>
+                <select id="selAxis" class="select">
+                  <option value="x">Eje X del plano (y = 0)</option>
+                  <option value="y">Eje Y del plano (x = 0)</option>
+                  <option value="line">Línea elegida en el plano</option>
+                </select>
+              </label>
+              <div class="row row-split">
+                <button id="btnPickAxis" class="btn" type="button"><i data-icon="axis"></i>Elegir línea…</button>
+                <span id="axisReadout" class="readout">Eje Y · (0, 0) → (0, 1)</span>
+              </div>
+              <div class="row"><span class="row-label">Ángulo</span>
+                <span class="range-field">
+                  <input id="rngAngle" class="range" type="range" min="1" max="360" step="1" value="360" aria-label="Ángulo de revolución">
+                  <span class="num-field num-field-xs"><input id="inpAngle" type="text" inputmode="decimal" value="360" aria-label="Ángulo en grados"><span class="unit">°</span></span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Multivista -->
+          <div id="panelMultiview" class="op-panel" data-panel-for="opSeg" data-panel="multiview" hidden>
+            <ul class="item-list slot-list">
+              <li id="slotTop" class="slot" data-role="top">
+                <span class="slot-name">Planta <span class="muted">(desde +Z)</span></span>
+                <span class="slot-status" data-state="empty">sin definir</span>
+                <button class="btn btn-sm" type="button" data-action="define"><i data-icon="window"></i>Definir ventana</button>
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="clear" aria-label="Quitar ventana de planta"><i data-icon="close"></i></button>
+              </li>
+              <li id="slotFront" class="slot" data-role="front">
+                <span class="slot-name">Alzado <span class="muted">(desde −Y)</span></span>
+                <span class="slot-status" data-state="empty">sin definir</span>
+                <button class="btn btn-sm" type="button" data-action="define"><i data-icon="window"></i>Definir ventana</button>
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="clear" aria-label="Quitar ventana de alzado"><i data-icon="close"></i></button>
+              </li>
+              <li id="slotRight" class="slot" data-role="right">
+                <span class="slot-name">Lateral derecha <span class="muted">(desde +X)</span></span>
+                <span class="slot-status" data-state="empty">sin definir</span>
+                <button class="btn btn-sm" type="button" data-action="define"><i data-icon="window"></i>Definir ventana</button>
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="clear" aria-label="Quitar ventana de lateral derecha"><i data-icon="close"></i></button>
+              </li>
+              <li id="slotLeft" class="slot" data-role="left">
+                <span class="slot-name">Lateral izquierda <span class="muted">(desde −X)</span></span>
+                <span class="slot-status" data-state="empty">sin definir</span>
+                <button class="btn btn-sm" type="button" data-action="define"><i data-icon="window"></i>Definir ventana</button>
+                <button class="btn btn-icon btn-sm btn-ghost" type="button" data-action="clear" aria-label="Quitar ventana de lateral izquierda"><i data-icon="close"></i></button>
+              </li>
+            </ul>
+            <p class="note"><i data-icon="info"></i><span>La pieza se reconstruye intersectando las siluetas extruidas de cada vista. Define al menos dos ventanas que encuadren la misma pieza; los huecos interiores que no se vean en ninguna vista no se reproducen.</span></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Paso 3: Material -->
+      <section id="stepMaterial" class="step" data-collapsible>
+        <button class="step-head collapsible-head" type="button" aria-expanded="true">
+          <span class="step-num">3</span>
+          <span class="step-title">Material</span>
+          <span id="stepMaterialSummary" class="step-summary"></span>
+          <i data-icon="chevron" data-size="14" class="collapse-caret"></i>
+        </button>
+        <div class="step-body collapsible-body">
+          <div class="form">
+            <label class="row row-stack"><span class="row-label">Material</span>
+              <select id="selMaterial" class="select"></select>
+            </label>
+            <div class="row"><span class="row-label">Densidad</span>
+              <span id="densityReadout" class="readout readout-value">—</span>
+              <span id="densityField" class="num-field" hidden><input id="inpDensity" type="text" inputmode="decimal" value="7.850" aria-label="Densidad"><span class="unit">g/cm³</span></span>
+            </div>
+            <div class="row"><span class="row-label">Precio</span>
+              <span class="num-field"><input id="inpPrice" type="text" inputmode="decimal" value="1.20" aria-label="Precio por kilogramo"><span class="unit">$/kg</span></span>
+            </div>
+            <div class="row"><span class="row-label" data-tip="Margen alrededor de la pieza para calcular el blank de lámina">Margen de blank</span>
+              <span class="num-field"><input id="inpBlankMargin" type="text" inputmode="decimal" value="5.0" aria-label="Margen de blank"><span class="unit">mm</span></span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="sidebar-footer">
+      <button id="btnGenerate" class="btn btn-primary btn-lg btn-block" type="button" data-tip="Generar pieza 3D" data-kbd="Ctrl+Enter"><i data-icon="play"></i>Generar pieza 3D</button>
+      <label class="switch switch-sm"><input id="chkAutoUpdate" type="checkbox" checked><span class="switch-track"></span><span class="switch-label">Actualizar automáticamente</span></label>
+    </div>
+  </aside>
+
+  <!-- ============ Centro: vistas ============ -->
+  <main id="workspace" class="workspace">
+    <div class="view-tabs-bar">
+      <div id="viewTabs" class="tabs" role="tablist" aria-label="Vistas">
+        <button type="button" role="tab" data-tab="2d" aria-selected="false"><i data-icon="drawing"></i>Plano 2D</button>
+        <button type="button" role="tab" data-tab="3d" aria-selected="true"><i data-icon="cube"></i>Pieza 3D</button>
+        <button type="button" role="tab" data-tab="split" aria-selected="false"><i data-icon="split"></i>Dividido</button>
+      </div>
+      <div id="viewInfo" class="view-info"></div>
+    </div>
+
+    <div id="viewports" class="viewports" data-view="3d">
+      <!-- Vista 2D -->
+      <section id="pane2d" class="pane pane-2d" aria-label="Plano 2D">
+        <div id="view2d" class="view-mount"></div>
+        <div id="toolbar2d" class="toolbar floating tl" role="toolbar" aria-label="Herramientas 2D">
+          <button class="btn btn-icon" type="button" data-mode2d="select" aria-pressed="true" data-tip="Seleccionar" data-kbd="S"><i data-icon="select"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="measure" aria-pressed="false" data-tip="Medir" data-kbd="M"><i data-icon="ruler"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="window" aria-pressed="false" data-tip="Ventana de vista" data-kbd="W"><i data-icon="window"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="axis" aria-pressed="false" data-tip="Eje de revolución" data-kbd="E"><i data-icon="axis"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="calibrate" aria-pressed="false" data-tip="Calibrar escala" data-kbd="K"><i data-icon="calibrate"></i></button>
+          <span class="toolbar-sep"></span>
+          <button id="btn2dFit" class="btn btn-icon" type="button" data-tip="Ajustar a la vista" data-kbd="Inicio"><i data-icon="fit"></i></button>
+          <button id="btn2dClearDims" class="btn btn-icon" type="button" data-tip="Borrar cotas"><i data-icon="trash"></i></button>
+        </div>
+        <div id="hint2d" class="hint-pill" hidden></div>
+        <div id="empty2d" class="empty-state">
+          <span class="empty-icon"><i data-icon="drawing" data-size="28"></i></span>
+          <p class="empty-title">Sin plano cargado</p>
+          <p class="empty-sub">Arrastra un DXF, SVG o imagen sobre la ventana</p>
+        </div>
+      </section>
+
+      <!-- Vista 3D -->
+      <section id="pane3d" class="pane pane-3d" aria-label="Pieza 3D">
+        <div id="view3d" class="view-mount"></div>
+
+        <div id="viewBar" class="toolbar floating tl" role="toolbar" aria-label="Vistas estándar">
+          <button class="btn btn-icon" type="button" data-view="iso" data-tip="Isométrica" data-kbd="0"><i data-icon="view-iso"></i></button>
+          <button class="btn btn-icon" type="button" data-view="front" data-tip="Frente" data-kbd="1"><i data-icon="view-front"></i></button>
+          <button class="btn btn-icon" type="button" data-view="top" data-tip="Superior" data-kbd="7"><i data-icon="view-top"></i></button>
+          <button class="btn btn-icon" type="button" data-view="right" data-tip="Derecha" data-kbd="3"><i data-icon="view-right"></i></button>
+          <button class="btn btn-icon" type="button" data-view="fit" data-tip="Ajustar" data-kbd="Inicio"><i data-icon="fit"></i></button>
+          <span class="toolbar-sep"></span>
+          <button id="btnProjection" class="btn btn-text-sm" type="button" data-value="perspective" data-tip="Cambiar proyección" data-kbd="O"><i data-icon="perspective" class="when-persp"></i><i data-icon="orthographic" class="when-ortho"></i><span class="proj-label">Perspectiva</span></button>
+        </div>
+
+        <div id="displayBar" class="toolbar floating tr" role="toolbar" aria-label="Visualización">
+          <button class="btn btn-icon" type="button" data-display="edges" aria-pressed="true" data-tip="Aristas"><i data-icon="edges"></i></button>
+          <button class="btn btn-icon" type="button" data-display="xray" aria-pressed="false" data-tip="Rayos X"><i data-icon="xray"></i></button>
+          <button class="btn btn-icon" type="button" data-display="wireframe" aria-pressed="false" data-tip="Alambre"><i data-icon="wireframe"></i></button>
+          <button class="btn btn-icon" type="button" data-display="grid" aria-pressed="true" data-tip="Rejilla"><i data-icon="grid"></i></button>
+          <button class="btn btn-icon" type="button" data-display="bbox" aria-pressed="false" data-tip="Caja envolvente"><i data-icon="bbox"></i></button>
+        </div>
+
+        <div id="toolPalette" class="toolbar floating vertical palette" role="toolbar" aria-label="Medición" aria-orientation="vertical">
+          <button class="btn btn-icon" type="button" data-tool="inspect" aria-pressed="false" data-tip="Inspeccionar" data-kbd="I" data-tip-side="right"><i data-icon="inspect"></i></button>
+          <button class="btn btn-icon" type="button" data-tool="point" aria-pressed="false" data-tip="Punto a punto" data-kbd="P" data-tip-side="right"><i data-icon="point"></i></button>
+          <button class="btn btn-icon" type="button" data-tool="distance" aria-pressed="false" data-tip="Distancia mínima" data-kbd="D" data-tip-side="right"><i data-icon="distance"></i></button>
+          <button class="btn btn-icon" type="button" data-tool="angle" aria-pressed="false" data-tip="Ángulo" data-kbd="A" data-tip-side="right"><i data-icon="angle"></i></button>
+          <button class="btn btn-icon" type="button" data-tool="radius" aria-pressed="false" data-tip="Radio / Ø" data-kbd="R" data-tip-side="right"><i data-icon="radius"></i></button>
+          <button class="btn btn-icon" type="button" data-tool="area" aria-pressed="false" data-tip="Área" data-kbd="F" data-tip-side="right"><i data-icon="area"></i></button>
+          <button class="btn btn-icon" type="button" data-tool="coords" aria-pressed="false" data-tip="Coordenadas" data-kbd="C" data-tip-side="right"><i data-icon="coords"></i></button>
+          <button class="btn btn-icon" type="button" data-tool="thickness" aria-pressed="false" data-tip="Espesor" data-kbd="T" data-tip-side="right"><i data-icon="thickness"></i></button>
+          <span class="toolbar-sep"></span>
+          <button id="btnClearMeasures" class="btn btn-icon btn-danger-ghost" type="button" data-tip="Borrar mediciones" data-tip-side="right"><i data-icon="trash"></i></button>
+        </div>
+
+        <div id="sectionBar" class="toolbar floating section-bar" role="group" aria-label="Sección">
+          <label class="switch switch-sm"><input id="chkSection" type="checkbox"><span class="switch-track"></span><span class="switch-label"><i data-icon="section"></i>Sección</span></label>
+          <div id="sectionAxisSeg" class="seg seg-sm" role="radiogroup" aria-label="Eje de sección">
+            <button type="button" data-value="x" aria-pressed="true">X</button>
+            <button type="button" data-value="y" aria-pressed="false">Y</button>
+            <button type="button" data-value="z" aria-pressed="false">Z</button>
+          </div>
+          <input id="rngSection" class="range" type="range" min="0" max="1" step="0.001" value="0.5" aria-label="Posición del plano de sección">
+          <output id="sectionValue" class="range-out">—</output>
+          <button id="btnSectionFlip" class="btn btn-icon btn-sm" type="button" aria-pressed="false" data-tip="Invertir lado"><i data-icon="invert"></i></button>
+        </div>
+
+        <div id="hint3d" class="hint-pill" hidden></div>
+
+        <div id="empty3d" class="empty-state">
+          <span class="empty-icon"><i data-icon="cube" data-size="28"></i></span>
+          <p class="empty-title">Carga un plano para generar la pieza</p>
+          <p class="empty-sub">Arrastra un DXF, SVG o imagen, o abre uno de los ejemplos</p>
+          <button id="btnEmptyOpen" class="btn btn-primary" type="button"><i data-icon="open"></i>Abrir plano</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ============ Panel derecho: propiedades ============ -->
+  <aside id="sidebarRight" class="sidebar sidebar-right" aria-label="Propiedades de la pieza" data-state="empty">
+    <div class="sidebar-scroll">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">Propiedades de la pieza</h2>
+          <p id="propsSubtitle" class="panel-sub">Genera una pieza para ver sus datos</p>
+        </div>
+        <button id="btnCloseRight" class="btn btn-icon btn-ghost drawer-close" type="button" aria-label="Cerrar panel"><i data-icon="close"></i></button>
+      </div>
+
+      <div id="propsEmpty" class="empty-inline">
+        <i data-icon="cube" data-size="20"></i>
+        <span>Aún no hay pieza. Carga un plano y pulsa <strong>Generar pieza 3D</strong>.</span>
+      </div>
+
+      <div id="propsBody" class="props-body" hidden>
+        <div class="kpi-grid">
+          <div class="kpi"><span class="kpi-label">Masa</span><span id="kpiMass" class="kpi-value">—</span><span id="kpiMassSub" class="kpi-sub"></span></div>
+          <div class="kpi"><span class="kpi-label">Volumen</span><span id="kpiVolume" class="kpi-value">—</span><span id="kpiVolumeSub" class="kpi-sub"></span></div>
+          <div class="kpi"><span class="kpi-label">Área superficial</span><span id="kpiArea" class="kpi-value">—</span><span id="kpiAreaSub" class="kpi-sub"></span></div>
+          <div class="kpi"><span class="kpi-label">Dimensiones L × A × H</span><span id="kpiDims" class="kpi-value">—</span><span id="kpiDimsSub" class="kpi-sub"></span></div>
+        </div>
+
+        <section class="prop-section" data-collapsible>
+          <button class="prop-head collapsible-head" type="button" aria-expanded="true"><span>Material y densidad</span><i data-icon="chevron" data-size="14" class="collapse-caret"></i></button>
+          <div class="collapsible-body"><div id="propMaterial" class="kv"></div></div>
+        </section>
+        <section class="prop-section" data-collapsible>
+          <button class="prop-head collapsible-head" type="button" aria-expanded="true"><span>Caja envolvente</span><i data-icon="chevron" data-size="14" class="collapse-caret"></i></button>
+          <div class="collapsible-body"><div id="propBBox" class="kv"></div></div>
+        </section>
+        <section class="prop-section" data-collapsible>
+          <button class="prop-head collapsible-head" type="button" aria-expanded="true"><span>Centro de masa</span><i data-icon="chevron" data-size="14" class="collapse-caret"></i></button>
+          <div class="collapsible-body"><div id="propCOM" class="kv"></div></div>
+        </section>
+        <section class="prop-section" data-collapsible>
+          <button class="prop-head collapsible-head" type="button" aria-expanded="true"><span>Inercia</span><i data-icon="chevron" data-size="14" class="collapse-caret"></i></button>
+          <div class="collapsible-body">
+            <div class="kv-caption">Tensor en el centro de masa <span id="inertiaUnit" class="unit">g·mm²</span></div>
+            <table id="inertiaTensor" class="matrix"></table>
+            <div id="propInertia" class="kv"></div>
+          </div>
+        </section>
+        <section class="prop-section" data-collapsible>
+          <button class="prop-head collapsible-head" type="button" aria-expanded="true"><span>Lámina / troquelado</span><i data-icon="chevron" data-size="14" class="collapse-caret"></i></button>
+          <div class="collapsible-body"><div id="propSheet" class="kv"></div></div>
+        </section>
+        <section class="prop-section" data-collapsible>
+          <button class="prop-head collapsible-head" type="button" aria-expanded="true"><span>Perfil 2D</span><i data-icon="chevron" data-size="14" class="collapse-caret"></i></button>
+          <div class="collapsible-body">
+            <div id="propProfile" class="kv"></div>
+            <table id="holesTable" class="data-table"></table>
+          </div>
+        </section>
+        <section class="prop-section" data-collapsible>
+          <button class="prop-head collapsible-head" type="button" aria-expanded="true"><span>Topología y validez</span><i data-icon="chevron" data-size="14" class="collapse-caret"></i></button>
+          <div class="collapsible-body">
+            <div id="topoBadges" class="badges"></div>
+            <div id="propTopology" class="kv"></div>
+          </div>
+        </section>
+        <section class="prop-section" data-collapsible>
+          <button class="prop-head collapsible-head" type="button" aria-expanded="true"><span>Verificación de precisión</span><i data-icon="chevron" data-size="14" class="collapse-caret"></i></button>
+          <div class="collapsible-body">
+            <div id="accuracyBadge" class="badges"></div>
+            <div id="propAccuracy" class="kv"></div>
+          </div>
+        </section>
+        <section class="prop-section" data-collapsible>
+          <button class="prop-head collapsible-head" type="button" aria-expanded="true"><span>Costo</span><i data-icon="chevron" data-size="14" class="collapse-caret"></i></button>
+          <div class="collapsible-body"><div id="propCost" class="kv"></div></div>
+        </section>
+      </div>
+
+      <section id="measurePanel" class="measure-panel">
+        <div class="panel-head panel-head-sm">
+          <h3 class="panel-title"><i data-icon="ruler"></i>Mediciones <span id="measureCount" class="count-badge">0</span></h3>
+        </div>
+        <ul id="measureList" class="item-list measure-list" data-empty="Elige una herramienta de medición en la vista 3D y haz clic sobre la pieza."></ul>
+        <div class="measure-actions">
+          <button id="btnMeasureCopy" class="btn btn-sm" type="button"><i data-icon="copy"></i>Copiar</button>
+          <button id="btnMeasureCSV" class="btn btn-sm" type="button"><i data-icon="table"></i>CSV</button>
+          <button id="btnMeasureClear" class="btn btn-sm btn-danger-ghost" type="button"><i data-icon="trash"></i>Borrar todo</button>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- ============ Barra de estado ============ -->
+  <footer id="statusbar" class="statusbar">
+    <span class="status-item"><i data-icon="coords" data-size="13"></i><span id="statusCoords">—</span></span>
+    <span class="status-item"><i data-icon="cpu" data-size="13"></i><span id="statusMode">Motor: —</span></span>
+    <span class="status-item"><i data-icon="clock" data-size="13"></i><span id="statusBuild">Sin generar</span></span>
+    <span class="status-spacer"></span>
+    <span class="status-item" id="statusUnits">mm</span>
+    <div class="popover-anchor">
+      <button id="btnWarnings" class="status-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="warnPopover" data-count="0"><i data-icon="warning" data-size="13"></i><span id="warnCount">0</span><span class="status-btn-label">avisos</span></button>
+      <div id="warnPopover" class="popover" hidden>
+        <div class="popover-head">Avisos</div>
+        <ul id="warnList" class="warn-list" data-empty="Sin avisos"></ul>
+      </div>
+    </div>
+  </footer>
+
+  <div id="drawerBackdrop" class="drawer-backdrop" hidden></div>
+</div>
+
+<!-- ============ Capas superpuestas ============ -->
+<div id="dropOverlay" class="drop-overlay" hidden>
+  <div class="drop-overlay-card"><i data-icon="upload" data-size="32"></i><span>Suelta el plano para abrirlo</span></div>
+</div>
+
+<div id="loadingOverlay" class="loading-overlay" hidden role="alertdialog" aria-live="assertive" aria-labelledby="loadingTitle">
+  <div class="loading-card">
+    <div class="spinner" aria-hidden="true"></div>
+    <div>
+      <p id="loadingTitle" class="loading-title">Preparando motor CAD</p>
+      <p id="loadingText" class="loading-text">Descomprimiendo OpenCascade…</p>
+    </div>
+    <div class="progress-indeterminate"><span></span></div>
+  </div>
+</div>
+
+<div id="toastStack" class="toast-stack" aria-live="polite"></div>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <h2 id="modalTitle" class="modal-title"></h2>
+      <button id="modalClose" class="btn btn-icon btn-ghost" type="button" aria-label="Cerrar"><i data-icon="close"></i></button>
+    </div>
+    <div id="modalBody" class="modal-body"></div>
+  </div>
+</div>
+
+<div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+
+<template id="helpTemplate">
+  <div class="help">
+    <section>
+      <h3>Cómo se usa</h3>
+      <ol class="help-steps">
+        <li><strong>Plano.</strong> Abre o arrastra un DXF, SVG o imagen. Revisa las unidades detectadas, desactiva las capas que no forman la pieza y corrige la tolerancia de unión si quedan cadenas abiertas.</li>
+        <li><strong>Operación.</strong> <em>Extrusión</em> da espesor a las regiones cerradas (cada agujero puede ser pasante, ciego o rellenarse). <em>Revolución</em> gira el perfil alrededor de un eje. <em>Multivista</em> reconstruye la pieza a partir de planta, alzado y laterales.</li>
+        <li><strong>Material.</strong> Elige el material o escribe una densidad; el precio y el margen de blank alimentan el costo y los datos de troquelado.</li>
+        <li><strong>Generar.</strong> La pieza B-rep exacta se calcula con OpenCascade; las propiedades aparecen a la derecha y se pueden exportar en STEP, STL, OBJ, GLB, PLY o como reporte.</li>
+      </ol>
+    </section>
+    <section>
+      <h3>Atajos de teclado</h3>
+      <table class="shortcut-table">
+        <tbody>
+          <tr><td><kbd>Ctrl</kbd> + <kbd>O</kbd></td><td>Abrir plano</td><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Generar pieza 3D</td></tr>
+          <tr><td><kbd>I</kbd></td><td>Inspeccionar</td><td><kbd>P</kbd></td><td>Punto a punto</td></tr>
+          <tr><td><kbd>D</kbd></td><td>Distancia mínima</td><td><kbd>A</kbd></td><td>Ángulo</td></tr>
+          <tr><td><kbd>R</kbd></td><td>Radio / Ø</td><td><kbd>F</kbd></td><td>Área</td></tr>
+          <tr><td><kbd>C</kbd></td><td>Coordenadas</td><td><kbd>T</kbd></td><td>Espesor</td></tr>
+          <tr><td><kbd>0</kbd> <kbd>1</kbd> <kbd>3</kbd> <kbd>7</kbd></td><td>Iso / Frente / Derecha / Superior</td><td><kbd>O</kbd></td><td>Perspectiva / ortográfica</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Cancelar herramienta / cerrar</td><td><kbd>?</kbd></td><td>Esta ayuda</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section>
+      <h3>Ratón en la vista 3D</h3>
+      <p class="muted">Botón izquierdo: girar · Botón derecho o Mayús + izquierdo: desplazar · Rueda: zoom hacia el cursor · Doble clic: centrar en el punto.</p>
+    </section>
+  </div>
+</template>
+
 <script src="build/occt-wasm.js"></script>
 <script src="build/kernel.js"></script>
 <script src="build/app.js"></script>

@@ -1,5 +1,9 @@
-// Punto de entrada de la interfaz (se completa en la integración).
+// Punto de entrada provisional: inicializa el armazón con datos de demostración.
+// El integrador lo sustituye por el cableado real (kernel, visores, importadores).
+import { initShell } from './ui-shell.js';
+import { runShellDemo } from './shell-demo.js';
+
 document.addEventListener('DOMContentLoaded', () => {
-  const el = document.getElementById('app');
-  if (el) el.textContent = 'Simulador Plano 2D → Pieza 3D';
+  initShell();
+  runShellDemo();
 });
