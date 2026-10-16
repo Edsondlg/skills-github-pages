@@ -548,29 +548,47 @@
     <section>
       <h3>Cómo se usa</h3>
       <ol class="help-steps">
-        <li><strong>Plano.</strong> Abre o arrastra un DXF, SVG o imagen. Revisa las unidades detectadas, desactiva las capas que no forman la pieza y corrige la tolerancia de unión si quedan cadenas abiertas.</li>
-        <li><strong>Operación.</strong> <em>Extrusión</em> da espesor a las regiones cerradas (cada agujero puede ser pasante, ciego o rellenarse). <em>Revolución</em> gira el perfil alrededor de un eje. <em>Multivista</em> reconstruye la pieza a partir de planta, alzado y laterales.</li>
-        <li><strong>Material.</strong> Elige el material o escribe una densidad; el precio y el margen de blank alimentan el costo y los datos de troquelado.</li>
-        <li><strong>Generar.</strong> La pieza B-rep exacta se calcula con OpenCascade; las propiedades aparecen a la derecha y se pueden exportar en STEP, STL, OBJ, GLB, PLY o como reporte.</li>
+        <li><strong>Abrir el plano.</strong> Abra o arrastre un DXF, SVG o imagen (PNG/JPG), o elija uno de los <em>Ejemplos</em>.</li>
+        <li><strong>Revisar los contornos.</strong> <span class="help-sw sw-in"></span>azul = pieza incluida · <span class="help-sw sw-out"></span>rayado = excluida · <span class="help-sw sw-open"></span>naranja = cadenas abiertas (huecos en el dibujo; suba la tolerancia de unión). Clic en una región para incluirla o excluirla.</li>
+        <li><strong>Elegir la operación.</strong> <em>Extrusión</em> da espesor a las regiones (cada agujero: pasante, ciego o relleno). <em>Revolución</em> gira el perfil: elija el eje (X, Y o una línea del plano). <em>Multivista</em> reconstruye la pieza: defina una ventana por vista (planta, alzado, laterales).</li>
+        <li><strong>Material.</strong> Elija el material (o la densidad), el precio por kg y el margen de blank para el costo y los datos de lámina.</li>
+        <li><strong>Medir.</strong> En 3D con la paleta (inspeccionar, punto a punto, distancia, ángulo, radio, área, coordenadas, espesor); en 2D con el modo <em>Medir</em> (Mayús+clic en un círculo da el radio). Todas las medidas se listan a la derecha y pasan al reporte.</li>
+        <li><strong>Exportar.</strong> STEP, STL, OBJ, GLB, PLY, reporte (imprimir/PDF o HTML), CSV, JSON o captura PNG.</li>
       </ol>
     </section>
     <section>
       <h3>Atajos de teclado</h3>
       <table class="shortcut-table">
         <tbody>
-          <tr><td><kbd>Ctrl</kbd> + <kbd>O</kbd></td><td>Abrir plano</td><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Generar pieza 3D</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>O</kbd></td><td>Abrir plano</td><td><kbd>G</kbd> · <kbd>Ctrl</kbd> <kbd>Enter</kbd></td><td>Generar pieza 3D</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>S</kbd></td><td>Exportar STEP</td><td><kbd>Ctrl</kbd> <kbd>P</kbd></td><td>Reporte (imprimir / PDF)</td></tr>
           <tr><td><kbd>I</kbd></td><td>Inspeccionar</td><td><kbd>P</kbd></td><td>Punto a punto</td></tr>
           <tr><td><kbd>D</kbd></td><td>Distancia mínima</td><td><kbd>A</kbd></td><td>Ángulo</td></tr>
           <tr><td><kbd>R</kbd></td><td>Radio / Ø</td><td><kbd>F</kbd></td><td>Área</td></tr>
           <tr><td><kbd>C</kbd></td><td>Coordenadas</td><td><kbd>T</kbd></td><td>Espesor</td></tr>
-          <tr><td><kbd>0</kbd> <kbd>1</kbd> <kbd>3</kbd> <kbd>7</kbd></td><td>Iso / Frente / Derecha / Superior</td><td><kbd>O</kbd></td><td>Perspectiva / ortográfica</td></tr>
+          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></td><td>Iso / Frente / Superior / Derecha</td><td><kbd>Inicio</kbd></td><td>Ajustar a la vista</td></tr>
+          <tr><td><kbd>O</kbd></td><td>Ortográfica / perspectiva</td><td><kbd>S</kbd></td><td>Sección</td></tr>
+          <tr><td><kbd>E</kbd></td><td>Aristas</td><td><kbd>X</kbd> · <kbd>W</kbd></td><td>Rayos X · Alambre</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>Cancelar herramienta / cerrar</td><td><kbd>?</kbd></td><td>Esta ayuda</td></tr>
         </tbody>
       </table>
     </section>
     <section>
-      <h3>Ratón en la vista 3D</h3>
-      <p class="muted">Botón izquierdo: girar · Botón derecho o Mayús + izquierdo: desplazar · Rueda: zoom hacia el cursor · Doble clic: centrar en el punto.</p>
+      <h3>Precisión</h3>
+      <ul class="help-list">
+        <li>La pieza es un sólido B-rep exacto calculado con OpenCascade; el volumen se verifica contra el área 2D calculada analíticamente.</li>
+        <li>STEP conserva la geometría exacta; STL, OBJ, GLB y PLY son mallas teseladas (aproximadas).</li>
+        <li>Las imágenes se trazan de forma aproximada: la exactitud depende de la calibración (mm por píxel).</li>
+      </ul>
+    </section>
+    <section>
+      <h3>Consejos</h3>
+      <ul class="help-list">
+        <li>Dibuje el DXF en mm o guárdelo con <code>$INSUNITS</code>; si no, revise las unidades detectadas.</li>
+        <li>Las capas de ejes y de líneas ocultas se ignoran; los marcos y cajetines del plano se detectan.</li>
+        <li>El DXF binario no está soportado: guárdelo como DXF ASCII.</li>
+        <li>Ratón 3D: izquierdo gira · derecho o Mayús+izquierdo desplaza · rueda acerca hacia el cursor.</li>
+      </ul>
     </section>
   </div>
 </template>
