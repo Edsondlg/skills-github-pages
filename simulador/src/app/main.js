@@ -20,6 +20,8 @@ import { initModes } from './modes-ui.js';
 const $ = ui.$;
 const PREFS_KEY = 'plano3d.prefs';
 const AUTO_MS = 400;
+const DEFAULT_MM_PER_PX = 0.25; // escala inicial de las imágenes (campo «Escala (mm/px)»)
+const EMPTY_PROFILE = { regions: [], loopInfos: [] };
 const ROLES = ['top', 'front', 'right', 'left'];
 const MODE_ICONS = { extrude: 'drawing', revolve: 'revolve', multiview: 'multiview' };
 const HINTS_2D = {
@@ -35,8 +37,8 @@ const S = {
   drawing: null, profile: null, op: null, build: null, partData: null, builtProfile: null, builtOp: null,
   material: findMaterial('acero-1008'), F: makeFormatter('metric'), sampleId: null,
   hiddenLayers: new Set(), selected: -1, openRegions: new Set(),
-  image: null, mmPerPx: 0.25, buildSeq: 0, building: false, everBuilt: false, kernelReady: false,
-  buildWarnings: [], buildError: null,
+  image: null, mmPerPx: DEFAULT_MM_PER_PX, buildSeq: 0, building: false, everBuilt: false, kernelReady: false,
+  buildWarnings: [], buildError: null, profileError: null, loadError: null,
   // Coherencia: appliedJob = trabajo exacto (con buildId) de la pieza mostrada; inputVer cuenta las
   // ediciones de geometría; dirty = las entradas cambiaron desde la última pieza aplicada.
   appliedJob: null, inputVer: 0, dirty: false, errorVer: -1, // errorVer: entradas en las que falló buildError
@@ -65,6 +67,7 @@ let kernel, viewer, measure, view2d, api;
 const fields = {};
 let autoTimer = 0;
 let inflight = null; // { ver, promise } de la generación en curso
+let opProfile = null; // perfil sobre el que se definió S.op (para conservar sus elecciones al rehacerlo)
 
 // ───────────── Arranque ─────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -210,51 +213,71 @@ function initOpen(examplesMenu) {
   });
 }
 
+// Ficha de carga: solo la última apertura iniciada aplica su resultado (o su error).
+let loadToken = 0;
+
 async function openFiles(files) {
   const file = files[0];
   if (!file) return;
+  const token = ++loadToken;
+  const current = () => token === loadToken;
+  let format = null;
   try {
     const head = new Uint8Array(await file.slice(0, 256).arrayBuffer());
-    const format = detectFormat(file.name, head);
+    if (!current()) return;
+    format = detectFormat(file.name, head);
     if (!format) throw new Error(`Formato no reconocido: ${file.name}. Use DXF, SVG o una imagen (PNG/JPG).`);
-    let drawing;
+    let drawing, image = null;
     if (format === 'dxf') drawing = importText('dxf', decodeDXF(new Uint8Array(await file.arrayBuffer())), file.name);
     else if (format === 'svg') drawing = importText('svg', await file.text(), file.name);
     else {
       const url = URL.createObjectURL(file);
       try {
-        drawing = await traceImageUrl(url, file.name, S.mmPerPx);
+        image = await decodeImage(url, file.name);
       } finally {
         URL.revokeObjectURL(url);
       }
+      if (!current()) return;
+      // Imagen nueva: escala por defecto, umbral automático y sin invertir.
+      drawing = traceWith(image, { mmPerPx: DEFAULT_MM_PER_PX, auto: true, invert: false });
     }
+    if (!current()) return;
     S.sampleId = null;
-    loadDrawing(drawing, null);
+    loadDrawing(drawing, null, image && { image, mmPerPx: DEFAULT_MM_PER_PX });
   } catch (e) {
+    if (!current()) return;
     console.warn(e);
     ui.toast(`No se pudo abrir ${file.name}: ${e.message || e}`, { type: 'error' });
+    // Un archivo no reconocido no llega a abrirse; uno ilegible sí reemplaza al plano anterior.
+    if (format) failLoad(file.name, format, e.message || String(e));
   }
 }
 
 async function loadSample(id) {
   const s = SAMPLES.find((x) => x.id === id);
   if (!s) return;
+  const token = ++loadToken;
   try {
-    let drawing;
+    let drawing, image = null;
+    const mmPerPx = s.suggested.mmPerPx || DEFAULT_MM_PER_PX;
     if (s.format === 'image') {
-      if (s.suggested.mmPerPx) setPxScale(s.suggested.mmPerPx);
-      drawing = await traceImageUrl(s.content, s.fileName, S.mmPerPx);
+      image = await decodeImage(s.content, s.fileName);
+      if (token !== loadToken) return;
+      drawing = traceWith(image, { mmPerPx, auto: true, invert: false });
     } else drawing = importText(s.format, s.content, s.fileName);
+    if (token !== loadToken) return;
     S.sampleId = id;
-    loadDrawing(drawing, s.suggested);
+    loadDrawing(drawing, s.suggested, image && { image, mmPerPx });
   } catch (e) {
+    if (token !== loadToken) return;
     console.warn(e);
     ui.toast(`No se pudo cargar el ejemplo: ${e.message || e}`, { type: 'error' });
+    failLoad(s.fileName, s.format, e.message || String(e));
   }
 }
 
-/** Decodifica una imagen (URL o data URL) a ImageData y la vectoriza. */
-async function traceImageUrl(url, fileName, mmPerPx) {
+/** Decodifica una imagen (URL o data URL) a { data: ImageData, fileName } sin tocar el estado. */
+async function decodeImage(url, fileName) {
   const img = new Image();
   img.src = url;
   await img.decode();
@@ -265,20 +288,27 @@ async function traceImageUrl(url, fileName, mmPerPx) {
   g.fillStyle = '#fff';
   g.fillRect(0, 0, cv.width, cv.height);
   g.drawImage(img, 0, 0);
-  S.image = { data: g.getImageData(0, 0, cv.width, cv.height), fileName };
-  return traceStored(mmPerPx);
+  return { data: g.getImageData(0, 0, cv.width, cv.height), fileName };
+}
+
+/** Vectoriza una imagen decodificada con opciones explícitas (sin tocar el estado). */
+function traceWith(image, { mmPerPx, auto, invert, threshold }) {
+  const opts = { mmPerPx, fileName: image.fileName, invert };
+  if (!auto) opts.threshold = threshold;
+  return importImage(image.data, opts);
 }
 
 function traceStored(mmPerPx) {
   const auto = $('chkThresholdAuto').checked;
-  const opts = { mmPerPx, fileName: S.image.fileName, invert: $('chkInvert').checked };
-  if (!auto) opts.threshold = Number($('rngThreshold').value);
-  const d = importImage(S.image.data, opts);
-  if (auto && d.threshold != null) {
-    ui.setRange($('rngThreshold'), d.threshold);
-    $('thresholdValue').textContent = String(Math.round(d.threshold));
-  }
+  const d = traceWith(S.image, { mmPerPx, auto, invert: $('chkInvert').checked, threshold: Number($('rngThreshold').value) });
+  if (auto) showThreshold(d.threshold);
   return d;
+}
+
+function showThreshold(t) {
+  if (t == null) return;
+  ui.setRange($('rngThreshold'), t);
+  $('thresholdValue').textContent = String(Math.round(t));
 }
 
 function setPxScale(v) {
@@ -286,25 +316,48 @@ function setPxScale(v) {
   fields.pxScale.set(v);
 }
 
-/** Plano nuevo: perfil, op por defecto (+ sugerencia), paneles y generación. */
-function loadDrawing(drawing, suggested) {
-  S.drawing = drawing;
+/** Archivo nuevo: descarta todo lo del plano anterior (perfil, op, imagen, modos 2D, pieza). */
+function resetForNewFile() {
+  Object.assign(S, { drawing: null, profile: null, op: null, image: null, selected: -1, frameLoops: null, profileError: null, loadError: null });
   S.hiddenLayers = new Set();
-  S.selected = -1;
   S.openRegions = new Set();
-  S.frameLoops = null;
-  if (drawing.format !== 'image') S.image = null;
+  opProfile = null;
   $('selDrawingUnits').value = 'auto';
   $('chkIgnoreAux').checked = true;
   measure.clear();
   view2d.clearMeasures();
+  setMode2d('select'); // anula ventana, eje o calibración pendientes y su pista
   ui.setRange($('rngSection'), 0);
   clearPart();
-  if (!computeProfile()) {
-    S.profile = null; // sin perfil válido no se genera (ni se exporta) nada del plano anterior
-    updateWarnings();
-    return;
+}
+
+/** Carga fallida: estado vacío para el archivo nuevo (nada del plano anterior) con el error visible. */
+function failLoad(name, format, msg) {
+  resetForNewFile();
+  S.loadError = msg;
+  ui.setFile({ name, format: format === 'image' ? 'img' : format });
+  ui.setPlanoLoaded(false);
+  ui.setEmpty('2d', true);
+  view2d.setDrawing({}, {});
+  renderRegions(EMPTY_PROFILE, { regions: [] }, S.F);
+  renderSlots({}, S.F);
+  updateWarnings();
+  api._emitProfile(true);
+}
+
+/** Plano nuevo: perfil, op por defecto (+ sugerencia), paneles y generación. img = { image, mmPerPx } en imágenes. */
+function loadDrawing(drawing, suggested, img = null) {
+  resetForNewFile();
+  S.drawing = drawing;
+  if (img) {
+    // Imagen nueva: escala por defecto (o la del ejemplo), umbral automático y sin invertir.
+    S.image = img.image;
+    setPxScale(img.mmPerPx);
+    $('chkThresholdAuto').checked = true;
+    $('chkInvert').checked = false;
+    showThreshold(drawing.threshold);
   }
+  if (!computeProfile()) return failLoad(drawing.fileName || 'plano', drawing.format, S.profileError);
   let op = defaultOpState(S.profile);
   op.thickness = fields.thickness.get();
   if (suggested) {
@@ -312,6 +365,7 @@ function loadDrawing(drawing, suggested) {
     if (suggested.materialId) setMaterialId(suggested.materialId);
   }
   S.op = op;
+  opProfile = S.profile;
   ui.setFile({ name: drawing.fileName || 'plano', format: drawing.format === 'image' ? 'img' : drawing.format });
   ui.setPlanoLoaded(true);
   ui.setEmpty('2d', false);
@@ -351,32 +405,71 @@ function computeProfile() {
       tol: fields.joinTol.get(),
       frameLoops: S.frameLoops ?? null,
     });
+    S.profileError = null;
     return true;
   } catch (e) {
-    ui.toast(e.message, { type: 'error' });
+    S.profile = null;
+    S.profileError = e.message || String(e);
+    ui.toast(S.profileError, { type: 'error' });
     return false;
   }
 }
 
-/** Cambió una opción del paso 1: rehace el perfil conservando la operación. */
+/** Cambió una opción del paso 1: rehace el perfil conservando las elecciones de la operación. */
 function reprocess(retrace = false) {
   if (!S.drawing) return;
   if (retrace && S.image) S.drawing = traceStored(S.mmPerPx);
-  if (!computeProfile()) return;
-  const old = S.op;
-  const op = defaultOpState(S.profile);
-  if (old) {
-    Object.assign(op, { mode: old.mode, thickness: old.thickness, symmetric: old.symmetric, fillets: old.fillets, multiview: old.multiview });
-    if (old.revolve.axisKind !== 'line') op.revolve = { ...old.revolve };
-    else op.revolve.angleDeg = old.revolve.angleDeg;
+  if (!computeProfile()) {
+    // Sin perfil: error visible, nada que generar ni exportar; la op se conserva para reintentar.
+    view2d.setDrawing({}, {});
+    renderRegions(EMPTY_PROFILE, { regions: [] }, S.F);
+    updateWarnings();
+    scheduleBuild();
+    return;
   }
-  S.op = op;
+  const old = S.op;
+  S.op = old ? keepOpChoices(defaultOpState(S.profile), old, opProfile, S.profile) : defaultOpState(S.profile);
+  opProfile = S.profile;
   S.selected = -1;
+  syncOpControls();
   refresh2D(true);
   renderAllPanels();
   updateWarnings();
   api._emitProfile(false);
   scheduleBuild();
+}
+
+/**
+ * Mismo plano con otro perfil: conserva modo, espesor, chaflanes, eje y ángulo, ventanas de multivista
+ * (escaladas si cambió la unidad: nuevo toMM / anterior) y las opciones por región si los contornos
+ * no cambiaron; si cambiaron, se restablecen con un aviso.
+ */
+function keepOpChoices(op, old, prev, p) {
+  const k = prev ? p.toMM / prev.toMM : 1;
+  Object.assign(op, { mode: old.mode, thickness: old.thickness, symmetric: old.symmetric, fillets: { ...old.fillets } });
+  const rv = old.revolve;
+  op.revolve = { ...rv, axis: { p: rv.axisKind === 'line' ? rv.axis.p.map((v) => v * k) : rv.axis.p.slice(), d: rv.axis.d.slice() } };
+  const windows = {};
+  for (const [role, w] of Object.entries(old.multiview.windows)) windows[role] = w && { ...w, minX: w.minX * k, minY: w.minY * k, maxX: w.maxX * k, maxY: w.maxY * k };
+  op.multiview = { ...old.multiview, windows };
+  if (prev && sameRegions(prev, p, k)) op.regions = structuredClone(old.regions);
+  else if (old.regions.some(customized)) ui.toast('Las opciones por región se restablecieron porque cambiaron los contornos', { type: 'info' });
+  return op;
+}
+
+// Región con opciones distintas de las por defecto.
+const customized = (rs) => !rs.included || rs.height != null || rs.z0 != null || rs.holes.some((h) => h.op !== 'through' || h.depth != null);
+
+// Misma estructura: igual número de regiones y agujeros y cajas de los contornos exteriores iguales (con tolerancia).
+function sameRegions(a, b, k) {
+  if (a.regions.length !== b.regions.length) return false;
+  const eps = 2 * Math.max((a.tol ?? 0.01) * k, b.tol ?? 0.01) + 1e-9;
+  return a.regions.every((r, i) => {
+    const s = b.regions[i];
+    if (r.holes.length !== s.holes.length) return false;
+    const A = a.loopInfos[r.outer].bbox, B = b.loopInfos[s.outer].bbox;
+    return ['minX', 'minY', 'maxX', 'maxY'].every((c) => Math.abs(A[c] * k - B[c]) <= eps);
+  });
 }
 
 // ───────────── Vista 2D ─────────────
@@ -693,6 +786,7 @@ function updateStale() {
   let text = '', state = '';
   if (S.building) [text, state] = ['Actualizando…', 'busy'];
   else if (S.dirty && S.buildError && S.errorVer === S.inputVer) [text, state] = [`No se pudo generar: ${S.buildError}`, 'error'];
+  else if (S.dirty && !S.profile && S.profileError) [text, state] = [`Perfil no válido: ${S.profileError}`, 'error'];
   else if (S.dirty && S.profile) {
     const mvShort = S.op?.mode === 'multiview' && ROLES.filter((r) => S.op.multiview.windows[r]).length < 2;
     [text, state] = [mvShort ? 'Multivista: defina al menos dos vistas y pulsa Generar' : 'Cambios sin aplicar — pulsa Generar', 'dirty'];
@@ -717,7 +811,7 @@ async function prepareExport() {
   }
   if (!S.dirty) return null;
   if (!S.kernelReady) return 'el motor CAD aún no está listo';
-  if (!S.profile) return 'el plano no tiene un perfil válido';
+  if (!S.profile) return S.profileError ? `el plano no tiene un perfil válido (${S.profileError})` : 'el plano no tiene un perfil válido';
   return (S.errorVer === S.inputVer && S.buildError) || 'hay cambios sin generar';
 }
 
@@ -760,6 +854,8 @@ function ensureKernelShape() {
 
 function updateWarnings() {
   const list = [];
+  if (S.loadError) list.push({ text: `No se pudo abrir el plano: ${S.loadError}`, level: 'error' });
+  if (S.profileError) list.push({ text: S.profileError, level: 'error' });
   if (S.buildError) list.push({ text: S.buildError, level: 'error' });
   for (const w of S.drawing?.warnings || []) list.push({ text: w, level: 'info' });
   for (const w of S.profile?.warnings || []) list.push({ text: w });
@@ -818,7 +914,7 @@ function initViews() {
   ui.onTheme((name) => {
     viewer.setTheme(name);
     view2d.setTheme(name);
-    if (S.drawing) renderPlano(S.drawing, S.profile, { hiddenLayers: S.hiddenLayers, theme: name });
+    if (S.drawing && S.profile) renderPlano(S.drawing, S.profile, { hiddenLayers: S.hiddenLayers, theme: name });
   });
   ui.onTab(() => requestAnimationFrame(() => {
     view2d.resize();
