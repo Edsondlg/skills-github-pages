@@ -15,7 +15,7 @@
  *           #infoFormat #infoUnits #infoScale #infoEntities #infoClosed #infoRegions #infoOpenRow #infoOpen
  *           #selDrawingUnits #inpJoinTol #chkIgnoreAux #layerCount #layerList
  *           #imageSection #rngThreshold #thresholdValue #chkThresholdAuto #chkInvert #inpPxScale #btnCalibrate
- *           #frameRow #frameInfo #chkIncludeFrame (marco del plano)
+ *           #frameRow #frameInfo #chkIncludeFrame (marco del plano) #scaleRow #btnResetScale (escala calibrada)
  *   Paso 2  #stepOp #stepOpSummary #opSeg (extrude|revolve|multiview)
  *           #panelExtrude #inpThickness #selGauge #thicknessChips #chkSymmetric #regionCount #regionList
  *           #inpFilletVertical #inpFilletTop #inpChamferTop
@@ -27,8 +27,8 @@
  *   Pie     #btnGenerate #chkAutoUpdate
  * Centro
  *   #workspace #viewTabs (data-tab = 2d|3d|split) #viewInfo #viewports
- *   2D  #pane2d #view2d #toolbar2d ([data-mode2d] = select|measure|window|axis|calibrate) #btn2dFit
- *       #btn2dClearDims #hint2d #empty2d
+ *   2D  #pane2d #view2d #toolbar2d ([data-mode2d] = select|measure|window|axis|calibrate|erase) #btn2dFit
+ *       #btn2dClearDims #btn2dShowErased #hint2d #empty2d
  *   3D  #pane3d #view3d #viewBar ([data-view] = iso|front|top|right|fit) #btnProjection
  *       #displayBar ([data-display] = edges|xray|wireframe|grid|bbox)
  *       #toolPalette ([data-tool] = inspect|point|distance|angle|radius|area|coords|thickness) #btnClearMeasures

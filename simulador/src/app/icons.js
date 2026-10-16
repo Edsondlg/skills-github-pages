@@ -78,6 +78,8 @@ const PATHS = {
   window: '<rect x="3.5" y="5" width="13" height="11" rx="1" stroke-dasharray="2.5 2"/><path d="M19 14v7M15.5 17.5h7"/>',
   axis: '<path d="M12 2v20" stroke-dasharray="4 2 1 2"/><path d="M19.5 11.5a7.5 3 0 0 1-15 0"/><path d="M4.5 11.5a7.5 3 0 0 1 13.4-1.8"/><path d="m18.6 7.2.2 2.7-2.6.4"/>',
   calibrate: '<path d="M3 18.5h18"/><path d="M6 18.5v-3M10 18.5v-2M14 18.5v-2M18 18.5v-3"/><circle cx="6" cy="7" r="2.2"/><circle cx="18" cy="7" r="2.2"/><path d="M8.5 7h7" stroke-dasharray="2 2"/>',
+  eraser: '<path d="M8.5 20.5 3.6 15.6a1.5 1.5 0 0 1 0-2.1L13.5 3.6a1.5 1.5 0 0 1 2.1 0l4.8 4.8a1.5 1.5 0 0 1 0 2.1L10.5 20.5"/><path d="M8.5 20.5H20.5M7.5 9.6l6.9 6.9"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
   // Operaciones
   extrude: '<path d="M3 16.5 12 21l9-4.5L12 12z"/><path d="M12 3v6.5M9 6l3-3 3 3"/>',
   revolve: '<path d="M12 2v20" stroke-dasharray="3 2.5"/><path d="M19.5 12a7.5 3 0 0 1-15 0"/><path d="M4.5 12a7.5 3 0 0 1 13.4-1.8"/><path d="m18.6 7.7.2 2.7-2.6.4"/>',

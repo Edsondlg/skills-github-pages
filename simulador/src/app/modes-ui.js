@@ -1,4 +1,4 @@
-// Modos de interacción del plano: ventanas de multivista, calibración de imágenes y marco del plano.
+// Modos de interacción del plano: ventanas de multivista y marco del plano (calibración y borrado: cleanup-ui.js).
 // Se apoya solo en la API de la app (app-api.js) y en las utilidades del armazón (ui-shell.js).
 import * as ui from './ui-shell.js';
 
@@ -81,62 +81,6 @@ export function initModes(app) {
     mvWarn.hidden = !list.length;
     mvWarn.querySelector('span').textContent = list.join(' ');
   });
-
-  // ───────────── Calibración de imágenes ─────────────
-  $('btnCalibrate').addEventListener('click', () => {
-    if (!app.getState().profile) return;
-    show2d();
-    view2d.clearMeasures();
-    app.setMode2d('calibrate');
-  });
-
-  view2d.on('calibrate', ({ d }) => {
-    app.setMode2d('select');
-    const st = app.getState();
-    if (st.drawing?.format !== 'image') {
-      view2d.clearMeasures();
-      ui.toast('La calibración con 2 puntos solo se aplica a imágenes; en DXF/SVG elija las «Unidades del plano».', { type: 'info' });
-      return;
-    }
-    if (!(d > 1e-9)) return view2d.clearMeasures();
-    openCalibrateModal(d, st.formatter, st.profile.toMM);
-  });
-
-  // toMM de una imagen = escala vigente en mm/px (sin el redondeo del campo).
-  function openCalibrateModal(d, F, scale) {
-    ui.showModal('Calibrar escala de la imagen', `
-      <form id="calibForm" class="form calib-form">
-        <p class="calib-measured">Distancia medida con la escala actual: <strong>${ui.escapeHtml(F.len(d))}</strong></p>
-        <label class="row"><span class="row-label">Distancia real entre los puntos (mm)</span>
-          <span class="num-field"><input id="inpCalibDist" type="text" inputmode="decimal" value="${+d.toFixed(3)}" aria-label="Distancia real entre los puntos (mm)"><span class="unit">mm</span></span>
-        </label>
-        <p id="calibError" class="calib-error" hidden>Escriba una distancia mayor que cero.</p>
-        <div class="calib-actions">
-          <button id="btnCalibCancel" class="btn" type="button">Cancelar</button>
-          <button id="btnCalibOk" class="btn btn-primary" type="submit">Aceptar</button>
-        </div>
-      </form>`);
-    const inp = $('inpCalibDist');
-    inp.focus();
-    inp.select();
-    $('btnCalibCancel').addEventListener('click', () => {
-      ui.closeModal();
-      view2d.clearMeasures();
-    });
-    $('calibForm').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const real = Number(String(inp.value).trim().replace(',', '.'));
-      if (!(real > 0) || !Number.isFinite(real)) {
-        $('calibError').hidden = false;
-        return;
-      }
-      ui.closeModal();
-      view2d.clearMeasures();
-      const mmPerPx = scale * (real / d);
-      app.setImageScale(mmPerPx);
-      ui.toast(`Escala calibrada: ${+mmPerPx.toPrecision(6)} mm/px`, { type: 'success' });
-    });
-  }
 
   // ───────────── Marco del plano ─────────────
   const chkFrame = $('chkIncludeFrame');

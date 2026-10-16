@@ -3,7 +3,7 @@
 
 /**
  * @param {Object} ctx  { S, kernel, viewer, measure, view2d, actions }
- *   actions: { setViewWindow, setRevolveAxis, setImageScale, rebuild, pickAxis, loadSample, openFiles, setMode2d, setFrameLoops,
+ *   actions: { setViewWindow, setRevolveAxis, setImageScale, reprocess, rebuild, pickAxis, loadSample, openFiles, setMode2d, setFrameLoops,
  *              prepareExport, ensureKernelShape }
  * @returns {Object} appApi
  */
@@ -38,11 +38,13 @@ export function createAppApi(ctx) {
     setRevolveAxis: (axis) => actions.setRevolveAxis(axis),
     /** Escala de la imagen trazada (mm por píxel). */
     setImageScale: (mmPerPx) => actions.setImageScale(mmPerPx),
+    /** Rehace el perfil con las opciones vigentes (borrados, escala); keepView conserva el encuadre 2D. */
+    reprocess: ({ keepView = false } = {}) => actions.reprocess(false, { keepView }),
     /** Lanza la generación ya (sin esperar al antirrebote). Devuelve una promesa. */
     rebuild: () => actions.rebuild(),
     /** Activa el modo 'axis' de la vista 2D; el clic en una línea fija el eje. */
     pickAxis: () => actions.pickAxis(),
-    /** Modo de la vista 2D ('select'|'measure'|'window'|'axis'|'calibrate') con su botón y su pista. */
+    /** Modo de la vista 2D ('select'|'measure'|'window'|'axis'|'calibrate'|'erase') con su botón y su pista. */
     setMode2d: (mode) => actions.setMode2d(mode),
     /** Marco del plano: null = detección automática (excluido); [] = incluido en el modelo. */
     setFrameLoops: (v) => actions.setFrameLoops(v),

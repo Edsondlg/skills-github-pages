@@ -105,6 +105,10 @@
               <div><dt>Regiones</dt><dd id="infoRegions">—</dd></div>
               <div id="infoOpenRow" class="info-warn"><dt>Cadenas abiertas</dt><dd id="infoOpen">—</dd></div>
             </dl>
+            <div id="scaleRow" class="frame-row" hidden>
+              <span class="frame-info">Escala calibrada con una cota conocida</span>
+              <button id="btnResetScale" class="btn btn-link" type="button">Restablecer escala</button>
+            </div>
             <div id="frameRow" class="frame-row" hidden>
               <span id="frameInfo" class="frame-info">Marco del plano detectado</span>
               <label class="switch switch-sm"><input id="chkIncludeFrame" type="checkbox"><span class="switch-track"></span><span class="switch-label">Incluir marco en el modelo</span></label>
@@ -339,7 +343,9 @@
           <button class="btn btn-icon" type="button" data-mode2d="window" aria-pressed="false" data-tip="Ventana de vista"><i data-icon="window"></i></button>
           <button class="btn btn-icon" type="button" data-mode2d="axis" aria-pressed="false" data-tip="Eje de revolución"><i data-icon="axis"></i></button>
           <button class="btn btn-icon" type="button" data-mode2d="calibrate" aria-pressed="false" data-tip="Calibrar escala"><i data-icon="calibrate"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="erase" aria-pressed="false" data-tip="Borrar líneas (B)"><i data-icon="eraser"></i></button>
           <span class="toolbar-sep"></span>
+          <button id="btn2dShowErased" class="btn btn-icon" type="button" aria-pressed="true" data-tip="Mostrar borradas"><i data-icon="eye"></i></button>
           <button id="btn2dFit" class="btn btn-icon" type="button" data-tip="Ajustar a la vista" data-kbd="Inicio"><i data-icon="fit"></i></button>
           <button id="btn2dClearDims" class="btn btn-icon" type="button" data-tip="Borrar cotas"><i data-icon="trash"></i></button>
         </div>

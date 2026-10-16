@@ -3,7 +3,8 @@
 //
 // Uso:
 //   const v = new View2D(container, { theme: 'dark', format: (mm) => '12.345 mm' });
-//   v.setDrawing({ segments, texts, layers }, { loops, loopInfos, open, regions });
+//   v.setDrawing({ segments, texts, layers }, { loops, loopInfos, open, regions }, { keepView: false });
+//   v.setErased(indices, { show: true });  // borrados: sin referencias; grises y discontinuos si show
 //   const off = v.on('regionClick', (e) => ...); off();
 //
 // Coordenadas de mundo con Y hacia arriba (unidades del plano). Coordenadas de pantalla en px CSS
@@ -21,6 +22,10 @@
 //               id: entero estable; removeMeasure(id) borra esa cota.
 //   calibrate   { p1, p2, d }                             dos puntos referenciados, en unidades del plano
 //   axisPick    { p, d, segIndex }                        p = inicio de la línea, d = dirección unitaria
+//   erase       { indices }                               modo 'erase': clic en un segmento o ventana arrastrada
+//                                                         (izq→der: dentro por completo; der→izq: que la cruzan)
+//   restore     { indices }                               modo 'erase': Mayús+clic en un segmento borrado (visible)
+//   calibrateCircle { segIndex, r, c }                    modo 'calibrate': clic en un círculo o arco (sin punto pendiente)
 //   cursor      { x, y, snap: null | { p, kind } } | null (null al salir del lienzo)
 // Tipos de referencia: 'end' | 'mid' | 'center' | 'quadrant' | 'nearest'.
 
@@ -42,14 +47,14 @@ const THEMES = {
     fg: '#ffffff', text: '#9aa3ad', label: '#e6edf3', labelBg: 'rgba(22,25,30,0.88)', labelBorder: 'rgba(255,255,255,0.14)',
     accent: '#3d8bfd', accentFill: 'rgba(61,139,253,0.17)', accentHover: 'rgba(61,139,253,0.75)', accentStrong: '#8cc0ff',
     excl: '#7b8490', exclHatch: 'rgba(150,158,168,0.42)', open: '#ff9a2e', measure: '#ffd166', calib: '#e879f9',
-    axis: '#ff6b8b', snap: '#3ddc84', axisX: 'rgba(229,83,75,0.55)', axisY: 'rgba(87,171,90,0.55)', bar: '#c9d1d9',
+    axis: '#ff6b8b', snap: '#3ddc84', erased: 'rgba(150,158,168,0.55)', eraseHover: '#ff5d5d', crossFill: 'rgba(61,220,132,0.12)', axisX: 'rgba(229,83,75,0.55)', axisY: 'rgba(87,171,90,0.55)', bar: '#c9d1d9',
   },
   light: {
     bg: '#f7f8fa', gridMinor: 'rgba(0,0,0,0.04)', gridMajor: 'rgba(0,0,0,0.09)',
     fg: '#000000', text: '#5f6b78', label: '#1f2328', labelBg: 'rgba(255,255,255,0.92)', labelBorder: 'rgba(0,0,0,0.16)',
     accent: '#1f6feb', accentFill: 'rgba(31,111,235,0.13)', accentHover: 'rgba(31,111,235,0.7)', accentStrong: '#0b4fc2',
     excl: '#8c959f', exclHatch: 'rgba(110,119,129,0.38)', open: '#e8710a', measure: '#b26a00', calib: '#a21caf',
-    axis: '#d6336c', snap: '#108a3e', axisX: 'rgba(207,34,46,0.5)', axisY: 'rgba(26,127,55,0.5)', bar: '#424a53',
+    axis: '#d6336c', snap: '#108a3e', erased: 'rgba(110,119,129,0.6)', eraseHover: '#d1242f', crossFill: 'rgba(16,138,62,0.1)', axisX: 'rgba(207,34,46,0.5)', axisY: 'rgba(26,127,55,0.5)', bar: '#424a53',
   },
 };
 
@@ -181,6 +186,10 @@ export class View2D {
     this._mouse = null;
     this._snap = null;
     this._hover = null;
+    this._shift = false;
+    this._erased = new Set();
+    this._showErased = true;
+    this._erasedPath = null;
     this._drag = null;
     this._touches = new Map();
     this._pinch = null;
@@ -198,7 +207,7 @@ export class View2D {
 
   // ----- API pública -----
 
-  setDrawing(drawing = {}, topo = {}) {
+  setDrawing(drawing = {}, topo = {}, { keepView = false } = {}) {
     const segs = drawing.segments || [];
     const prevVis = this._layers;
     this._layers = new Map();
@@ -251,20 +260,35 @@ export class View2D {
     this._regionPaths = null;
     this._openPath = null;
 
+    this._erased = new Set();
     this._buildBatches();
     this._buildIndex();
-    this._measures = [];
+    if (!keepView) this._measures = [];
     this._pending = null;
     this._calib = null;
     this._hover = null;
     this._snap = null;
-    this.fit();
+    if (keepView) {
+      this._hoverDirty = true;
+      this._requestRender();
+    } else this.fit();
+    return this;
+  }
+
+  /** Segmentos borrados (índices del dibujo): sin referencias ni selección; grises y discontinuos si show. */
+  setErased(indices = [], { show = this._showErased } = {}) {
+    this._erased = new Set(indices);
+    this._showErased = !!show;
+    this._buildBatches();
+    this._hoverDirty = true;
+    this._requestRender();
     return this;
   }
 
   setLayerVisible(name, visible) {
     const L = this._layers.get(name);
     if (L) L.visible = !!visible;
+    this._erasedPath = null;
     this._hoverDirty = true;
     this._requestRender();
     return this;
@@ -472,8 +496,9 @@ export class View2D {
 
   // Lotes por capa/color/trazo: un Path2D cada uno, en coordenadas locales (mundo − origen).
   _buildBatches() {
-    const map = new Map();
+    const map = new Map(), er = this._erased;
     for (let i = 0; i < this._segs.length; i++) {
+      if (er.has(i)) continue;
       const s = this._segs[i], L = this._segLayer[i], meta = s.meta || {};
       const color = meta.color != null && meta.color !== 0 && meta.color !== 256 ? meta.color : L.color;
       const dashed = meta.dashed != null ? !!meta.dashed : !CONTINUOUS.has(L.linetype);
@@ -490,6 +515,25 @@ export class View2D {
       b.css = colorCss(b.color, this.theme);
       b.path = this._segsPath(b.idx.map((i) => this._segs[i]));
     }
+    this._erasedPath = null;
+  }
+
+  // Trayecto de los borrados en capas visibles.
+  _getErasedPath() {
+    if (!this._erasedPath && this._erased.size) this._erasedPath = this._segsPath([...this._erased].filter((i) => this._segLayer[i]?.visible).map((i) => this._segs[i]));
+    return this._erasedPath;
+  }
+
+  // Segmentos de la ventana de borrado: dentro por completo o (captura) que la tocan.
+  _segsInBox(a, b, crossing) {
+    const minX = Math.min(a[0], b[0]), minY = Math.min(a[1], b[1]), maxX = Math.max(a[0], b[0]), maxY = Math.max(a[1], b[1]);
+    const B = this._segBB, out = new Set();
+    this._segGrid?.query(minX, minY, maxX, maxY, (i) => {
+      if (!this._segLayer[i].visible || this._erased.has(i)) return;
+      const inside = B[4 * i] >= minX && B[4 * i + 1] >= minY && B[4 * i + 2] <= maxX && B[4 * i + 3] <= maxY;
+      if (inside || (crossing && polyTouchesBox(segTessellate(this._segs[i], this._tol()), minX, minY, maxX, maxY))) out.add(i);
+    });
+    return [...out].sort((x, y) => x - y);
   }
 
   // Trayecto de segmentos sueltos; une los consecutivos que se tocan (trazos continuos).
@@ -567,6 +611,7 @@ export class View2D {
     if (level <= this._tessLevel) return;
     this._tessLevel = level;
     for (const b of this._batches) if (b.hasSpline) b.path = this._segsPath(b.idx.map((i) => this._segs[i]));
+    this._erasedPath = null;
     this._loopPaths = [];
     this._regionPaths = null;
     this._openPath = null;
@@ -638,12 +683,13 @@ export class View2D {
   }
 
   // Segmento visible más cercano a p dentro de r que cumple filter → { i, q, d } | null.
-  _pickSeg(p, r, filter) {
+  // erased = true: solo entre los borrados.
+  _pickSeg(p, r, filter, erased = false) {
     let best = null;
     if (!this._segGrid) return null;
     const B = this._segBB;
     this._segGrid.query(p[0] - r, p[1] - r, p[0] + r, p[1] + r, (i) => {
-      if (!this._segLayer[i].visible || (filter && !filter(this._segs[i]))) return;
+      if (!this._segLayer[i].visible || this._erased.has(i) !== erased || (filter && !filter(this._segs[i]))) return;
       if (p[0] < B[4 * i] - r || p[0] > B[4 * i + 2] + r || p[1] < B[4 * i + 1] - r || p[1] > B[4 * i + 3] + r) return;
       const c = segClosestPoint(this._segs[i], p);
       if (c.d <= r && (!best || c.d < best.d)) best = { i, q: c.q, d: c.d };
@@ -657,7 +703,7 @@ export class View2D {
     const w = this.screenToWorld(q), r = SNAP_PX / this._view.scale, S = this._snapPts;
     let best = null;
     this._ptGrid.query(w[0] - r, w[1] - r, w[0] + r, w[1] + r, (k) => {
-      if (!this._segLayer[S.owner[k]].visible) return;
+      if (!this._segLayer[S.owner[k]].visible || this._erased.has(S.owner[k])) return;
       const d = Math.hypot(S.xs[k] - w[0], S.ys[k] - w[1]);
       if (d > r) return;
       if (!best || d < best.d - 1e-6 * r || (Math.abs(d - best.d) <= 1e-6 * r && S.kinds[k] < best.k))
@@ -708,6 +754,10 @@ export class View2D {
         this._space = down;
         this._updateCursor();
       }
+    } else if (e.key === 'Shift' && this.mode === 'erase') {
+      this._shift = e.type === 'keydown';
+      this._hoverDirty = true;
+      this._requestRender();
     } else if (e.key === 'Escape' && e.type === 'keydown' && (this._pending || this._drag)) {
       this._pending = null;
       this._drag = null;
@@ -740,12 +790,13 @@ export class View2D {
     if (e.button === 1 || e.button === 2 || (e.button === 0 && this._space)) {
       this._drag = { kind: 'pan', last: q };
       this._updateCursor();
-    } else if (e.button === 0) this._drag = { kind: this.mode === 'window' ? 'window' : 'click', start: q, cur: q, moved: false };
+    } else if (e.button === 0) this._drag = { kind: this.mode === 'window' ? 'window' : this.mode === 'erase' && !e.shiftKey ? 'erasebox' : 'click', start: q, cur: q, moved: false };
   }
 
   _onMove(e) {
     const q = this._pt(e);
     this._mouse = q;
+    this._shift = !!e.shiftKey;
     if (e.pointerType === 'touch' && this._touches.has(e.pointerId)) {
       this._touches.set(e.pointerId, q);
       if (this._pinch && this._touches.size === 2) {
@@ -789,6 +840,9 @@ export class View2D {
         const a = this.screenToWorld(dr.start), b = this.screenToWorld(q);
         this._emit('window', { minX: Math.min(a[0], b[0]), minY: Math.min(a[1], b[1]), maxX: Math.max(a[0], b[0]), maxY: Math.max(a[1], b[1]) });
       }
+    } else if (dr.kind === 'erasebox' && dr.moved) {
+      const idx = this._segsInBox(this.screenToWorld(dr.start), this.screenToWorld(q), q[0] < dr.start[0]);
+      if (idx.length) this._emit('erase', { indices: idx });
     } else if (!dr.moved && e.type === 'pointerup') this._click(q, e);
     this._hoverDirty = true;
     this._requestRender();
@@ -846,8 +900,22 @@ export class View2D {
         }
         return;
       }
+      case 'erase': {
+        const l = this._pickSeg(w, SNAP_PX / this._view.scale, null, shiftKey);
+        if (l && (!shiftKey || this._showErased)) this._emit(shiftKey ? 'restore' : 'erase', { indices: [l.i] });
+        return;
+      }
       case 'calibrate': {
         const sn = this._findSnap(q), p = sn ? sn.p : w;
+        // Sin punto pendiente, un clic en un círculo o arco (no en un extremo ni un centro) calibra por su diámetro.
+        if (!this._pending && (!sn || (sn.kind !== 'end' && sn.kind !== 'center'))) {
+          const c = this._pickSeg(w, SNAP_PX / this._view.scale, (s) => s.type === 'circle' || s.type === 'arc');
+          if (c) {
+            const s = this._segs[c.i];
+            this._emit('calibrateCircle', { segIndex: c.i, r: s.r, c: s.c.slice() });
+            return;
+          }
+        }
         if (!this._pending) this._pending = { p, kind: sn ? sn.kind : null };
         else {
           const a = this._pending.p;
@@ -882,6 +950,10 @@ export class View2D {
     } else if (this.mode === 'axis') {
       const l = this._pickSeg(w, SNAP_PX / this._view.scale, (s) => s.type === 'line');
       if (l) this._hover = { seg: l.i };
+    } else if (this.mode === 'erase' && !this._drag?.moved) {
+      const rs = this._shift && this._showErased;
+      const l = this._pickSeg(w, SNAP_PX / this._view.scale, null, rs);
+      if (l) this._hover = { seg: l.i, erase: rs ? 'restore' : 'erase' };
     }
     this._emit('cursor', { x: w[0], y: w[1], snap: this._snap ? { p: this._snap.p, kind: this._snap.kind } : null });
   }
@@ -947,6 +1019,15 @@ export class View2D {
       }
     }
 
+    const ep = this._showErased ? this._getErasedPath() : null;
+    if (ep) {
+      ctx.strokeStyle = th.erased;
+      ctx.lineWidth = px;
+      ctx.setLineDash([3, 3].map((v) => v * cssPx));
+      ctx.stroke(ep);
+      ctx.setLineDash([]);
+    }
+
     const op = this._getOpenPath();
     if (op) {
       ctx.strokeStyle = th.open;
@@ -970,7 +1051,7 @@ export class View2D {
       for (const li of lis) ctx.stroke(this._loopPath(li));
     }
     if (hv && hv.seg != null) {
-      ctx.strokeStyle = th.axis;
+      ctx.strokeStyle = hv.erase === 'erase' ? th.eraseHover : hv.erase === 'restore' ? th.snap : th.axis;
       ctx.lineWidth = 3 * cssPx;
       ctx.stroke(this._segsPath([this._segs[hv.seg]]));
     }
@@ -1324,15 +1405,17 @@ export class View2D {
 
   _drawRubberBand() {
     const dr = this._drag;
-    if (!dr || dr.kind !== 'window' || !dr.moved) return;
+    if (!dr || (dr.kind !== 'window' && dr.kind !== 'erasebox') || !dr.moved) return;
     const ctx = this.ctx, th = this._th;
     const x = Math.min(dr.start[0], dr.cur[0]), y = Math.min(dr.start[1], dr.cur[1]);
     const w = Math.abs(dr.cur[0] - dr.start[0]), h = Math.abs(dr.cur[1] - dr.start[1]);
-    ctx.fillStyle = th.accentFill;
+    // Borrado estilo CAD: ventana (izq→der, azul continuo) o captura (der→izq, verde discontinuo).
+    const cross = dr.kind === 'erasebox' && dr.cur[0] < dr.start[0];
+    ctx.fillStyle = cross ? th.crossFill : th.accentFill;
     ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = th.accent;
+    ctx.strokeStyle = cross ? th.snap : th.accent;
     ctx.lineWidth = 1;
-    ctx.setLineDash([5, 3]);
+    ctx.setLineDash(dr.kind === 'erasebox' && !cross ? [] : [5, 3]);
     ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w), Math.round(h));
     ctx.setLineDash([]);
   }
@@ -1358,6 +1441,25 @@ export class View2D {
 }
 
 // Curvas que se dibujan teseladas (el lienzo no tiene primitiva exacta).
+// ¿La polilínea toca el rectángulo? (algún vértice dentro o algún tramo lo cruza; Liang-Barsky)
+function polyTouchesBox(pts, minX, minY, maxX, maxY) {
+  for (let k = 0; k < pts.length; k++) {
+    const [x1, y1] = pts[k];
+    if (x1 >= minX && x1 <= maxX && y1 >= minY && y1 <= maxY) return true;
+    if (!k) continue;
+    const [x0, y0] = pts[k - 1], dx = x1 - x0, dy = y1 - y0;
+    let t0 = 0, t1 = 1, hit = true;
+    for (const [p, q] of [[-dx, x0 - minX], [dx, maxX - x0], [-dy, y0 - minY], [dy, maxY - y0]]) {
+      if (p === 0) {
+        if (q < 0) hit = false;
+      } else if (p < 0) t0 = Math.max(t0, q / p);
+      else t1 = Math.min(t1, q / p);
+    }
+    if (hit && t0 <= t1) return true;
+  }
+  return false;
+}
+
 function needsTess(s) {
   return s.type === 'spline' || (s.type === 'bezier' && s.pts.length !== 3 && s.pts.length !== 4);
 }

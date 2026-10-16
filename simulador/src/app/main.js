@@ -16,6 +16,7 @@ import { createAppApi } from './app-api.js';
 import { initToolsUi } from './tools-ui.js';
 import { initExportUi } from './export-ui.js';
 import { initModes } from './modes-ui.js';
+import { initCleanup } from './cleanup-ui.js';
 
 const $ = ui.$;
 const PREFS_KEY = 'plano3d.prefs';
@@ -29,7 +30,8 @@ const HINTS_2D = {
   measure: 'Clic en dos puntos para medir · Mayús+clic en un círculo para el radio',
   window: 'Arrastra un rectángulo alrededor de una vista',
   axis: 'Haz clic en la línea de eje (línea de centros)',
-  calibrate: 'Haz clic en dos puntos de distancia conocida (se ajustan a extremos, centros y puntos medios)',
+  calibrate: 'Haz clic en dos puntos de distancia conocida o en un círculo o arco de diámetro conocido',
+  erase: 'Clic en una línea para borrarla · arrastra: izq→der dentro, der→izq cruzando · Mayús+clic restaura · Ctrl+Z deshace',
 };
 
 // ───────────── Estado ─────────────
@@ -63,7 +65,7 @@ function savePrefs() {
   }
 }
 
-let kernel, viewer, measure, view2d, api;
+let kernel, viewer, measure, view2d, api, cleanup;
 const fields = {};
 let autoTimer = 0;
 let inflight = null; // { ver, promise } de la generación en curso
@@ -92,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
       api?._emitMeasure(list, extra);
     },
   });
-  api = createAppApi({ S, kernel, viewer, measure, view2d, actions: { setViewWindow, setRevolveAxis, setImageScale, rebuild: runBuild, pickAxis, loadSample, openFiles, setMode2d, setFrameLoops, prepareExport, ensureKernelShape } });
+  api = createAppApi({ S, kernel, viewer, measure, view2d, actions: { setViewWindow, setRevolveAxis, setImageScale, reprocess, rebuild: runBuild, pickAxis, loadSample, openFiles, setMode2d, setFrameLoops, prepareExport, ensureKernelShape } });
   window.__app = api;
 
   initFields(prefs);
@@ -103,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initToolsUi(api);
   initExportUi(api);
   initModes(api);
+  cleanup = initCleanup(api);
   ui.setEmpty('2d', true);
   ui.setEmpty('3d', true);
   ui.setPropsVisible(false);
@@ -399,9 +402,11 @@ function clearPart() {
 function computeProfile() {
   const d = S.drawing;
   const sel = $('selDrawingUnits').value;
+  const c = cleanup.profileOptions(d); // borrados y escala calibrada de este dibujo
   try {
     S.profile = prepareProfile(d, {
-      unitOverride: d.format === 'image' ? S.mmPerPx : sel,
+      unitOverride: d.format === 'image' ? S.mmPerPx : c.unitOverride ?? sel,
+      erasedIds: c.erasedIds,
       ignoreDashed: $('chkIgnoreAux').checked,
       hiddenLayers: [...S.hiddenLayers],
       tol: fields.joinTol.get(),
@@ -417,8 +422,8 @@ function computeProfile() {
   }
 }
 
-/** Cambió una opción del paso 1: rehace el perfil conservando las elecciones de la operación. */
-function reprocess(retrace = false) {
+/** Cambió una opción del paso 1: rehace el perfil conservando las elecciones de la operación (keepView: sin reencuadre). */
+function reprocess(retrace = false, { keepView = false } = {}) {
   if (!S.drawing) return;
   if (retrace && S.image) {
     try {
@@ -442,7 +447,7 @@ function reprocess(retrace = false) {
   opProfile = S.profile;
   S.selected = -1;
   syncOpControls();
-  refresh2D(true);
+  refresh2D(true, { keepView });
   renderAllPanels();
   updateWarnings();
   api._emitProfile(false);
@@ -483,17 +488,17 @@ function sameRegions(a, b, k) {
 }
 
 // ───────────── Vista 2D ─────────────
-function refresh2D(full) {
+function refresh2D(full, { keepView = false } = {}) {
   const d = S.drawing, p = S.profile;
   if (full) {
     const k = p.toMM;
     const m = [k, 0, 0, k, 0, 0];
     const segments = k === 1 ? d.segments : d.segments.map((s) => segTransform(s, m));
     const texts = k === 1 ? d.texts : (d.texts || []).map((t) => ({ ...t, p: [t.p[0] * k, t.p[1] * k], h: (t.h || 2.5) * k }));
-    view2d.setDrawing({ segments, texts, layers: d.layers }, { loops: p.loops, loopInfos: p.loopInfos, open: p.open, regions: p.regions });
+    view2d.setDrawing({ segments, texts, layers: d.layers }, { loops: p.loops, loopInfos: p.loopInfos, open: p.open, regions: p.regions }, { keepView });
     for (const name of S.hiddenLayers) view2d.setLayerVisible(name, false);
     // Si la vista estaba oculta (pestaña 3D) el ajuste se repite al mostrarla.
-    S.need2dFit = !$('view2d').clientWidth;
+    if (!keepView) S.need2dFit = !$('view2d').clientWidth;
   }
   p.regions.forEach((_, i) => view2d.setRegionState(i, { included: S.op.regions[i].included, selected: i === S.selected }));
   view2d.showAxis(S.op.mode === 'revolve' ? revolveAxisLine(S.op.revolve) : null);
@@ -626,7 +631,10 @@ function initOperation() {
   $('btnPickAxis').addEventListener('click', pickAxis);
 
   // Paso 1: unidades, tolerancia, trazos auxiliares, capas, imagen
-  $('selDrawingUnits').addEventListener('change', () => reprocess());
+  $('selDrawingUnits').addEventListener('change', () => {
+    cleanup.clearScale(S.drawing); // la unidad elegida sustituye a la escala calibrada
+    reprocess();
+  });
   $('chkIgnoreAux').addEventListener('change', () => reprocess());
   $('layerList').addEventListener('change', (e) => {
     const t = e.target;
