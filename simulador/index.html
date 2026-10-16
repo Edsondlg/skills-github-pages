@@ -178,7 +178,7 @@
               </div>
               <label class="row"><span class="row-label">Calibre</span>
                 <select id="selGauge" class="select">
-                  <option value="">— Personalizado —</option>
+                  <option value="">Personalizado</option>
                   <optgroup label="Lámina de acero">
                     <option value="3.416">10 ga · 3.416 mm</option>
                     <option value="3.038">11 ga · 3.038 mm</option>
@@ -232,9 +232,9 @@
             <div class="form">
               <label class="row"><span class="row-label">Eje</span>
                 <select id="selAxis" class="select">
-                  <option value="x">Eje X del plano (y = 0)</option>
-                  <option value="y">Eje Y del plano (x = 0)</option>
-                  <option value="line">Línea elegida en el plano</option>
+                  <option value="x">Eje X (y = 0)</option>
+                  <option value="y">Eje Y (x = 0)</option>
+                  <option value="line">Línea elegida</option>
                 </select>
               </label>
               <div class="row row-split">
@@ -334,11 +334,11 @@
       <section id="pane2d" class="pane pane-2d" aria-label="Plano 2D">
         <div id="view2d" class="view-mount"></div>
         <div id="toolbar2d" class="toolbar floating tl" role="toolbar" aria-label="Herramientas 2D">
-          <button class="btn btn-icon" type="button" data-mode2d="select" aria-pressed="true" data-tip="Seleccionar" data-kbd="S"><i data-icon="select"></i></button>
-          <button class="btn btn-icon" type="button" data-mode2d="measure" aria-pressed="false" data-tip="Medir" data-kbd="M"><i data-icon="ruler"></i></button>
-          <button class="btn btn-icon" type="button" data-mode2d="window" aria-pressed="false" data-tip="Ventana de vista" data-kbd="W"><i data-icon="window"></i></button>
-          <button class="btn btn-icon" type="button" data-mode2d="axis" aria-pressed="false" data-tip="Eje de revolución" data-kbd="E"><i data-icon="axis"></i></button>
-          <button class="btn btn-icon" type="button" data-mode2d="calibrate" aria-pressed="false" data-tip="Calibrar escala" data-kbd="K"><i data-icon="calibrate"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="select" aria-pressed="true" data-tip="Seleccionar"><i data-icon="select"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="measure" aria-pressed="false" data-tip="Medir"><i data-icon="ruler"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="window" aria-pressed="false" data-tip="Ventana de vista"><i data-icon="window"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="axis" aria-pressed="false" data-tip="Eje de revolución"><i data-icon="axis"></i></button>
+          <button class="btn btn-icon" type="button" data-mode2d="calibrate" aria-pressed="false" data-tip="Calibrar escala"><i data-icon="calibrate"></i></button>
           <span class="toolbar-sep"></span>
           <button id="btn2dFit" class="btn btn-icon" type="button" data-tip="Ajustar a la vista" data-kbd="Inicio"><i data-icon="fit"></i></button>
           <button id="btn2dClearDims" class="btn btn-icon" type="button" data-tip="Borrar cotas"><i data-icon="trash"></i></button>
@@ -356,19 +356,19 @@
         <div id="view3d" class="view-mount"></div>
 
         <div id="viewBar" class="toolbar floating tl" role="toolbar" aria-label="Vistas estándar">
-          <button class="btn btn-icon" type="button" data-view="iso" data-tip="Isométrica" data-kbd="0"><i data-icon="view-iso"></i></button>
-          <button class="btn btn-icon" type="button" data-view="front" data-tip="Frente" data-kbd="1"><i data-icon="view-front"></i></button>
-          <button class="btn btn-icon" type="button" data-view="top" data-tip="Superior" data-kbd="7"><i data-icon="view-top"></i></button>
-          <button class="btn btn-icon" type="button" data-view="right" data-tip="Derecha" data-kbd="3"><i data-icon="view-right"></i></button>
+          <button class="btn btn-icon" type="button" data-view="iso" data-tip="Isométrica" data-kbd="1"><i data-icon="view-iso"></i></button>
+          <button class="btn btn-icon" type="button" data-view="front" data-tip="Frente" data-kbd="2"><i data-icon="view-front"></i></button>
+          <button class="btn btn-icon" type="button" data-view="top" data-tip="Superior" data-kbd="3"><i data-icon="view-top"></i></button>
+          <button class="btn btn-icon" type="button" data-view="right" data-tip="Derecha" data-kbd="4"><i data-icon="view-right"></i></button>
           <button class="btn btn-icon" type="button" data-view="fit" data-tip="Ajustar" data-kbd="Inicio"><i data-icon="fit"></i></button>
           <span class="toolbar-sep"></span>
           <button id="btnProjection" class="btn btn-text-sm" type="button" data-value="perspective" data-tip="Cambiar proyección" data-kbd="O"><i data-icon="perspective" class="when-persp"></i><i data-icon="orthographic" class="when-ortho"></i><span class="proj-label">Perspectiva</span></button>
         </div>
 
         <div id="displayBar" class="toolbar floating tr" role="toolbar" aria-label="Visualización">
-          <button class="btn btn-icon" type="button" data-display="edges" aria-pressed="true" data-tip="Aristas"><i data-icon="edges"></i></button>
-          <button class="btn btn-icon" type="button" data-display="xray" aria-pressed="false" data-tip="Rayos X"><i data-icon="xray"></i></button>
-          <button class="btn btn-icon" type="button" data-display="wireframe" aria-pressed="false" data-tip="Alambre"><i data-icon="wireframe"></i></button>
+          <button class="btn btn-icon" type="button" data-display="edges" aria-pressed="true" data-tip="Aristas" data-kbd="E"><i data-icon="edges"></i></button>
+          <button class="btn btn-icon" type="button" data-display="xray" aria-pressed="false" data-tip="Rayos X" data-kbd="X"><i data-icon="xray"></i></button>
+          <button class="btn btn-icon" type="button" data-display="wireframe" aria-pressed="false" data-tip="Alambre" data-kbd="W"><i data-icon="wireframe"></i></button>
           <button class="btn btn-icon" type="button" data-display="grid" aria-pressed="true" data-tip="Rejilla"><i data-icon="grid"></i></button>
           <button class="btn btn-icon" type="button" data-display="bbox" aria-pressed="false" data-tip="Caja envolvente"><i data-icon="bbox"></i></button>
         </div>
