@@ -22,6 +22,11 @@ const ROLE_NAMES = { top: 'superior', front: 'frontal', right: 'lateral derecha'
 const VIEW_ROLES = ['top', 'front', 'right', 'left'];
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp']);
 
+/** Id estable de un segmento del plano (meta.sid asignado al importar; si falta, su índice). */
+export const segId = (s, i) => s.meta?.sid ?? i;
+// Ids estables al importar: meta.sid = índice en drawing.segments (meta copiado: puede ser compartido).
+const withIds = (segs) => segs.map((s, i) => ({ ...s, meta: { ...s.meta, sid: i } }));
+
 /**
  * @typedef {{segs: Object[]}} Loop
  * @typedef {Object} Drawing
@@ -79,7 +84,7 @@ export function importText(format, text, fileName = '') {
       format, fileName,
       units: { name: u.name, toMM: u.toMM, detected: u.detected ?? (u.name !== 'px' && u.name !== 'unitless') },
       layers: (names.length ? names : ['SVG']).map((name) => ({ name })),
-      segments: d.segments, texts: [], warnings: d.warnings || [], stats: { segments: d.segments.length },
+      segments: withIds(d.segments), texts: [], warnings: d.warnings || [], stats: { segments: d.segments.length },
     };
   }
   throw new Error(`Formato de plano no soportado: ${format}`);
@@ -102,7 +107,7 @@ function drawingFromDXF(format, d, fileName) {
   return {
     format, fileName,
     units: { name: u.assumed ?? u.name, toMM: u.toMM, detected: !u.assumed },
-    layers: d.layers, segments: d.segments, texts: d.texts, warnings: d.warnings, stats: d.stats,
+    layers: d.layers, segments: withIds(d.segments), texts: d.texts, warnings: d.warnings, stats: d.stats,
   };
 }
 
@@ -122,7 +127,7 @@ export function importImage(imageData, opts = {}) {
     units: { name: 'px', toMM: mmPerPx ?? 1, detected: false },
     threshold: r.threshold,
     layers: [{ name: 'Trazado' }],
-    segments: r.segments.map((s) => (s.meta ? s : { ...s, meta })),
+    segments: withIds(r.segments.map((s) => (s.meta ? s : { ...s, meta }))),
     texts: [], warnings: r.warnings || [], stats: r.stats,
   };
 }
@@ -163,13 +168,18 @@ export function importImage(imageData, opts = {}) {
  * @param {boolean} [o.concentricAsAnnotation=true]  par de círculos concéntricos (agujero + isla) = avellanado o rosca:
  *   el círculo exterior se trata como anotación y el interior queda como barreno
  * @param {?number[]} [o.annotationLoops=null]  índices en loops de las anotaciones; si se da, sustituye a la detección
+ * @param {boolean} [o.mergeDoubleLines=true]  par de contornos anidados casi paralelos y muy próximos (chaflán o
+ *   arista dibujados con doble línea) = un solo contorno: el interior de un exterior o el exterior de un agujero
+ *   pasa a ser anotación (ver detectDoubleLines)
+ * @param {Iterable<number>} [o.erasedIds=[]]  ids de segmento (segId) borrados por el usuario: se descartan antes
+ *   de armar los contornos
  * @param {?number[]} [o.frameLoops=null]  índices en loops del marco elegidos por el usuario (posiblemente vacío);
  *   si se da, sustituye a la detección. Los índices son estables para el mismo dibujo y las mismas opciones.
  * Los contornos del marco siguen en loops/loopInfos (para dibujarlos) con sus índices originales; las regiones se
  * calculan sin ellos y sus índices outer/holes apuntan a loops.
  * @returns {Profile}
  */
-export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = true, hiddenLayers = [], tol = 0.01, chordTol = 0.01, detectFrame = true, frameLoops = null, concentricAsAnnotation = true, annotationLoops = null } = {}) {
+export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = true, hiddenLayers = [], tol = 0.01, chordTol = 0.01, detectFrame = true, frameLoops = null, concentricAsAnnotation = true, annotationLoops = null, mergeDoubleLines = true, erasedIds = [] } = {}) {
   let toMM;
   if (unitOverride == null || unitOverride === 'auto') toMM = drawing.units.toMM;
   else if (typeof unitOverride === 'number' && unitOverride > 0) toMM = unitOverride;
@@ -181,9 +191,12 @@ export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = 
   const m = [toMM, 0, 0, toMM, 0, 0];
   const scale = (s) => (toMM === 1 ? s : segTransform(s, m));
   const segments = [], axisLines = [];
-  let hiddenRemoved = 0, dashedRemoved = 0;
+  let hiddenRemoved = 0, dashedRemoved = 0, erasedRemoved = 0;
   const invalid = new Map(); // motivo → cantidad
-  for (const s of drawing.segments) {
+  const erased = new Set(erasedIds);
+  for (let i = 0; i < drawing.segments.length; i++) {
+    const s = drawing.segments[i];
+    if (erased.size && erased.has(segId(s, i))) { erasedRemoved++; continue; }
     const why = segInvalidReason(s);
     if (why) { invalid.set(why, (invalid.get(why) || 0) + 1); continue; }
     const layer = s.meta?.layer, dashed = !!s.meta?.dashed;
@@ -205,16 +218,20 @@ export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = 
   let frame;
   if (Array.isArray(frameLoops)) frame = [...new Set(frameLoops)].filter((i) => Number.isInteger(i) && i >= 0 && i < L.loops.length).sort((a, b) => a - b);
   else if (detectFrame) {
-    frame = detectFrameLoops(L.loops, loopInfos, buildRegions(L.loops, { chordTol }).nodes, tol);
+    frame = detectFrameLoops(L.loops, loopInfos, buildRegions(L.loops, { chordTol }).nodes, tol, mergeDoubleLines);
     if (frame.length) warnings.push('Se detectó el marco del plano y se excluyó del modelo (actívalo con «Incluir marco en el modelo» en el paso 1).');
   } else frame = [];
   // Anotaciones: círculo exterior de pares concéntricos (se anida sin el marco).
   const fr = new Set(frame);
   let annotation = [];
   if (Array.isArray(annotationLoops)) annotation = [...new Set(annotationLoops)].filter((i) => Number.isInteger(i) && i >= 0 && i < L.loops.length && !fr.has(i)).sort((a, b) => a - b);
-  else if (concentricAsAnnotation) {
-    const found = detectConcentricAnnotations(L.loops, loopInfos, regionsWithout(L.loops, frame, chordTol).nodes, tol);
-    annotation = found.map((p) => p.outer);
+  else {
+    if (mergeDoubleLines) {
+      annotation = detectDoubleLines(loopInfos, regionsWithout(L.loops, frame, chordTol).nodes, tol);
+      if (annotation.length) warnings.push(`Se interpretaron ${annotation.length} contornos dobles (chaflán o arista) como una sola línea.`);
+    }
+    const found = concentricAsAnnotation ? detectConcentricAnnotations(L.loops, loopInfos, regionsWithout(L.loops, [...frame, ...annotation], chordTol).nodes, tol) : [];
+    annotation = [...annotation, ...found.map((p) => p.outer)].sort((a, b) => a - b);
     if (found.length) {
       const ds = found.slice(0, 3).map((p) => (2 * loopInfos[p.inner].circle.r).toFixed(3)).join(', ');
       warnings.push(`Se interpretaron ${found.length} pares de círculos concéntricos como avellanado o rosca: se usa el círculo interior como barreno (Ø ${ds}).`);
@@ -227,7 +244,7 @@ export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = 
   return {
     toMM, tol, segments, loops: L.loops, loopInfos, open: L.open, regions, nodes, frameLoops: frame, annotationLoops: annotation, axisLines,
     stats: {
-      segmentsIn: drawing.segments.length, segmentsUsed: segments.length, hiddenRemoved, dashedRemoved,
+      segmentsIn: drawing.segments.length, segmentsUsed: segments.length, hiddenRemoved, dashedRemoved, erasedRemoved,
       duplicatesRemoved: L.stats.duplicatesRemoved, zeroLengthRemoved: L.stats.zeroLengthRemoved,
       loops: L.loops.length, regions: regions.length, holes, openChains: L.open.length,
     },
@@ -257,18 +274,22 @@ function concentricCircles(a, b, tol) {
  * - Línea sencilla: R con algún agujero que contiene una isla, sin ser el par (agujero, isla) dos círculos
  *   concéntricos (avellanado/rosca) → [R].
  */
-function detectFrameLoops(loops, infos, nodes, tol) {
+function detectFrameLoops(loops, infos, nodes, tol, skipThin = false) {
   const cands = nodes.map((_, i) => i).filter((i) => nodes[i].parent === -1 && isAxisRect(loops[i], infos[i]))
     .sort((a, b) => infos[b].area - infos[a].area);
   for (const r of cands) {
-    const kids = nodes[r].children, R = infos[r].bbox;
+    const R = infos[r].bbox;
+    // Con mergeDoubleLines las dobles líneas de arista no son marco: un contorno pegado al borde (≤ 1 mm) se ignora
+    // y un agujero cuya isla es su doble línea no cuenta como agujero con pieza dentro.
+    const thin = (h) => { const H = infos[h].bbox; return Math.max(H.minX - R.minX, H.minY - R.minY, R.maxX - H.maxX, R.maxY - H.maxY) <= 1 && isDouble(infos, r, h, tol); };
+    const kids = skipThin ? nodes[r].children.filter((h) => !thin(h)) : nodes[r].children;
     if (kids.length === 1 && nodes[kids[0]].children.length >= 1 && isAxisRect(loops[kids[0]], infos[kids[0]])) {
       const H = infos[kids[0]].bbox;
       const lim = Math.max(20, 0.08 * Math.min(R.maxX - R.minX, R.maxY - R.minY));
       const inset = [H.minX - R.minX, H.minY - R.minY, R.maxX - H.maxX, R.maxY - H.maxY];
       if (inset.every((d) => d > 0 && d <= lim)) return [r, kids[0]].sort((a, b) => a - b);
     }
-    if (kids.some((h) => nodes[h].children.some((isl) => !concentricCircles(infos[h], infos[isl], tol)))) return [r];
+    if (kids.some((h) => nodes[h].children.some((isl) => !concentricCircles(infos[h], infos[isl], tol) && !(skipThin && isDouble(infos, h, isl, tol))))) return [r];
   }
   return [];
 }
@@ -282,6 +303,58 @@ function detectConcentricAnnotations(loops, infos, nodes, tol) {
     if (inner != null) out.push({ outer: h, inner });
   });
   return out;
+}
+
+// Distancia de p al polígono cerrado poly.
+function distToPoly(p, poly) {
+  let best = Infinity;
+  for (let i = 0, n = poly.length; i < n; i++) {
+    const a = poly[i], b = poly[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+    const d = Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+// ≤ n puntos repartidos del polígono.
+const sample = (poly, n = 256) => (poly.length <= n ? poly : Array.from({ length: n }, (_, k) => poly[Math.floor((k * poly.length) / n)]));
+
+// Contorno doble: A contiene directamente a B, distancia de Hausdorff (muestreada) H ≤ max(3·tol, 1.5 % de la
+// diagonal de la caja del menor) y sin tocarse (distancia mínima ≥ 0.25·H).
+function isDouble(infos, a, b, tol) {
+  const ab = infos[a].bbox, bb = infos[b].bbox;
+  const lim = Math.max(3 * tol, 0.015 * Math.hypot(bb.maxX - bb.minX, bb.maxY - bb.minY));
+  // Cota inferior barata: el retranqueo de las cajas no supera la distancia de Hausdorff.
+  if (Math.max(bb.minX - ab.minX, bb.minY - ab.minY, ab.maxX - bb.maxX, ab.maxY - bb.maxY) > lim) return false;
+  let H = 0, min = Infinity;
+  for (const [P, Q] of [[infos[a].poly, infos[b].poly], [infos[b].poly, infos[a].poly]])
+    for (const p of sample(P)) {
+      const d = distToPoly(p, Q);
+      if (d > H) H = d;
+      if (d < min) min = d;
+      if (H > lim) return false;
+    }
+  return H > 0 && min >= 0.25 * H;
+}
+
+// Contornos dobles (índices a descartar). Recorrido de arriba abajo con la profundidad efectiva (sin los ya
+// descartados): A exterior (par) → se descarta B; A agujero (impar) → se descarta A.
+function detectDoubleLines(infos, nodes, tol) {
+  const out = [];
+  const visit = (i, e) => {
+    const kids = nodes[i].children, c = kids.find((k) => isDouble(infos, i, k, tol));
+    if (c == null) return kids.forEach((k) => visit(k, e + 1));
+    if (e % 2 === 0) {
+      out.push(c);
+      for (const k of [...kids.filter((k) => k !== c), ...nodes[c].children]) visit(k, e + 1);
+    } else {
+      out.push(i);
+      for (const k of kids) visit(k, e);
+    }
+  };
+  nodes.forEach((n, i) => n.parent === -1 && !n.frame && visit(i, 0));
+  return out.sort((a, b) => a - b);
 }
 
 // buildRegions sin los contornos excluidos, con los índices remapeados a loops.

@@ -435,3 +435,66 @@ test('prepareProfile omite segmentos inválidos con aviso y conserva el resto', 
   assert.ok(p.warnings.some((w) => /Se omitieron 1 entidad\(es\) con geometría inválida: spline con nudos decrecientes/.test(w)), p.warnings.join(' | '));
   assert.ok(p.warnings.some((w) => /círculo con radio ≤ 0/.test(w)));
 });
+
+const DBL_WARN = /Se interpretaron (\d+) contornos dobles \(chaflán o arista\) como una sola línea\./;
+
+test('contornos dobles (chaflán/arista): se fusionan en una sola línea', () => {
+  // Rectángulo 100×60 con su desfase interior a 0.5 mm y un agujero Ø20 dibujado como r=10 y r=10.5.
+  const segs = () => drw([...rectSegs(0, 0, 100, 60), ...rectSegs(0.5, 0.5, 99.5, 59.5), C(30, 30, 10), C(30, 30, 10.5)]);
+  const p = prepareProfile(segs());
+  assert.equal(p.regions.length, 1);
+  close(p.loopInfos[p.regions[0].outer].area, 6000, 1e-9);
+  assert.equal(p.regions[0].holes.length, 1);
+  close(p.loopInfos[p.regions[0].holes[0]].circle.r, 10, 1e-12);
+  assert.ok(p.warnings.some((w) => DBL_WARN.exec(w)?.[1] === '1'), p.warnings.join(' | '));
+  assert.ok(p.annotationLoops.every((i) => p.nodes[i].annotation === true));
+  const op = defaultOpState(p);
+  op.thickness = 2;
+  close(K.build(makeJob(p, op)).props.volume, (6000 - PI * 100) * 2, 1e-9);
+  // Sin la opción: comportamiento antiguo (el borde doble se toma por marco del plano; queda el círculo r=10.5).
+  const old = prepareProfile(segs(), { mergeDoubleLines: false });
+  assert.equal(old.frameLoops.length, 2);
+  assert.equal(old.regions.length, 1);
+  close(old.loopInfos[old.regions[0].outer].circle.r, 10.5, 1e-12);
+  assert.ok(!old.warnings.some((w) => DBL_WARN.test(w)));
+  // Agujero rectangular doble: queda el contorno interior (el exterior del par se descarta).
+  const slot = prepareProfile(drw([...rectSegs(0, 0, 100, 60), ...rectSegs(20, 20, 40, 30), ...rectSegs(20.2, 20.2, 39.8, 29.8)]));
+  assert.equal(slot.regions.length, 1);
+  assert.equal(slot.regions[0].holes.length, 1);
+  close(slot.loopInfos[slot.regions[0].holes[0]].area, 19.6 * 9.6, 1e-9);
+});
+
+test('contornos dobles: un tubo de pared delgada real no se fusiona', () => {
+  const p = prepareProfile(drw([...rectSegs(0, 0, 100, 60), ...rectSegs(5, 5, 95, 55)]));
+  assert.equal(p.regions.length, 1);
+  assert.equal(p.regions[0].holes.length, 1);
+  close(p.loopInfos[p.regions[0].holes[0]].area, 90 * 50, 1e-9);
+  assert.deepEqual(p.annotationLoops, []);
+  assert.ok(!p.warnings.some((w) => DBL_WARN.test(w)));
+});
+
+test('erasedIds: los segmentos borrados se descartan antes de armar contornos', () => {
+  const d = drw([...rectSegs(0, 0, 100, 60), C(30, 30, 10)]);
+  assert.equal(prepareProfile(d).regions[0].holes.length, 1);
+  // Sin meta.sid el id es el índice: borrar un lado abre el rectángulo → sin región del rectángulo.
+  const p = prepareProfile(d, { erasedIds: [0] });
+  assert.equal(p.regions.length, 1); // solo queda el círculo
+  close(p.loopInfos[p.regions[0].outer].circle.r, 10, 1e-12);
+  assert.equal(p.stats.erasedRemoved, 1);
+  assert.equal(p.open.length, 1);
+  assert.equal(prepareProfile(d, { erasedIds: [0, 4] }).regions.length, 0);
+  // Al importar, meta.sid = índice estable del segmento.
+  const dxf = load('placa-soporte');
+  assert.ok(dxf.segments.every((s, i) => s.meta.sid === i));
+  const holeSeg = dxf.segments.findIndex((s) => s.type === 'circle');
+  const base = prepareProfile(dxf);
+  const er = prepareProfile(dxf, { erasedIds: new Set([dxf.segments[holeSeg].meta.sid]) });
+  assert.equal(er.stats.holes, base.stats.holes - 1);
+});
+
+test('unitOverride numérico: escala libre (calibración)', () => {
+  const p = prepareProfile(drw(rectSegs(0, 0, 100, 60)), { unitOverride: 12.7 / 8.5 });
+  close(p.toMM, 12.7 / 8.5, 1e-15);
+  close(p.bbox.maxX, (100 * 12.7) / 8.5, 1e-12);
+  close(p.loopInfos[p.regions[0].outer].area, 6000 * (12.7 / 8.5) ** 2, 1e-9);
+});
