@@ -1,0 +1,59 @@
+/* Paneles de resultados. Colores solo de css/tokens.css. Denso, cifras tabulares, desde 340 px. */
+.pnl { font-family: var(--font-ui); font-size: var(--fs-sm); color: var(--fg); display: flex; flex-direction: column; gap: var(--gap); min-width: 0; font-variant-numeric: tabular-nums; }
+.pnl * { box-sizing: border-box; }
+.pnl-stack { display: flex; flex-direction: column; gap: var(--gap); }
+.pnl-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; min-width: 0; }
+.pnl-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.pnl-card-head h3 { margin: 0; font-family: var(--font-cond); font-size: var(--fs-md); font-weight: 600; letter-spacing: .01em; }
+.pnl-card-sub, .pnl-muted { color: var(--fg-muted); font-size: var(--fs-xs); font-weight: 400; }
+.pnl-subhead { margin: 10px 0 4px; font-family: var(--font-cond); font-size: var(--fs-sm); font-weight: 600; color: var(--steel); text-transform: uppercase; letter-spacing: .04em; border-top: 1px solid var(--line); padding-top: 8px; }
+.pnl-card-head + .pnl-subhead { border-top: 0; padding-top: 0; margin-top: 0; }
+.pnl-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; margin: 0; }
+.pnl-kv dt { color: var(--fg-muted); min-width: 0; }
+.pnl-kv dd { margin: 0; text-align: right; font-family: var(--font-mono); font-size: var(--fs-xs); white-space: nowrap; align-self: center; }
+.pnl-note { margin: 6px 0 0; color: var(--fg-muted); font-size: var(--fs-xs); line-height: 1.4; }
+.pnl-note-warn { color: var(--fg); background: var(--warn-soft); border-left: 3px solid var(--warn); padding: 5px 8px; border-radius: 0 var(--radius) var(--radius) 0; }
+.pnl-empty { color: var(--fg-muted); margin: 0; }
+.pnl-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.pnl-chip { font: inherit; font-size: var(--fs-xs); font-family: var(--font-cond); padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--fg); cursor: pointer; }
+.pnl-chip:hover { border-color: var(--steel); }
+.pnl-chip.is-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.pnl-scroll { overflow-x: auto; max-width: 100%; }
+.pnl-table { border-collapse: collapse; width: 100%; font-size: var(--fs-xs); }
+.pnl-table th, .pnl-table td { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.pnl-table thead th { font-family: var(--font-cond); font-weight: 600; color: var(--fg-muted); border-bottom-color: var(--line-strong); }
+.pnl-table tfoot th { border-top: 1px solid var(--line-strong); border-bottom: 0; }
+.pnl-table .num { text-align: right; font-family: var(--font-mono); }
+.pnl-pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 600; font-family: var(--font-cond); line-height: 1.5; }
+.pnl-pill-ok { background: var(--ok-soft); color: var(--ok); }
+.pnl-pill-warning { background: var(--warn-soft); color: var(--warn); }
+.pnl-pill-fail { background: var(--fail-soft); color: var(--fail); }
+.pnl-pill-info { background: var(--steel-soft); color: var(--steel); }
+.pnl-ico { width: 14px; height: 14px; flex: none; }
+.pnl-ico > :first-child { stroke: none; }
+.pnl-ico .pnl-ico-mark { fill: none; stroke: var(--panel-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.pnl-ico-ok > :first-child { fill: var(--ok); }
+.pnl-ico-warning > :first-child { fill: var(--warn); }
+.pnl-ico-fail > :first-child { fill: var(--fail); }
+.pnl-ico-info > :first-child { fill: var(--steel); }
+.pnl-figure { width: 100%; }
+.pnl-svg { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--font-cond); }
+
+/* Herramental: esquema en planta */
+.sch .sch-die { fill: var(--steel-soft); stroke: var(--steel); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.sch .sch-nostroke { stroke: none; }
+.sch .sch-die-flange, .sch .sch-hub { fill: none; stroke: var(--steel); stroke-width: 1; stroke-dasharray: 5 4; opacity: .55; vector-effect: non-scaling-stroke; }
+.sch .sch-center { stroke: var(--steel); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sch .sch-clamp, .sch .sch-pdie { fill: var(--steel-soft); stroke: var(--steel); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.sch .sch-serrated { stroke-dasharray: 2 2; }
+.sch .sch-wiper { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.sch .sch-tube { fill: var(--fg-muted); stroke: none; }
+.sch .sch-tube-bore { fill: var(--bg); stroke: var(--fg-muted); stroke-width: .8; vector-effect: non-scaling-stroke; }
+.sch .sch-mandrel { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.sch .sch-link { stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.sch .sch-tangent { stroke: var(--fg-muted); stroke-width: 1; stroke-dasharray: 8 3 2 3; vector-effect: non-scaling-stroke; }
+.sch .sch-dim path { stroke: var(--fg); stroke-width: .9; fill: none; vector-effect: non-scaling-stroke; }
+.sch .sch-dim .sch-arrow { fill: var(--fg); stroke: none; }
+.sch .sch-dim text, .sch .sch-label { fill: var(--fg); font-family: var(--font-mono); }
+.sch .sch-label { fill: var(--fg-muted); font-family: var(--font-cond); }
+.sch .sch-dot { fill: var(--fg); }
