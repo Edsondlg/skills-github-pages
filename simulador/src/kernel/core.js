@@ -1,0 +1,947 @@
+// Núcleo CAD: construcción B-rep exacta (OpenCascade vía replicad), propiedades físicas,
+// medición de distancias, teselado y exportación STEP/STL. Corre en Node y en el navegador.
+import opencascade from 'replicad-opencascadejs';
+import * as R from 'replicad';
+
+let oc = null;
+let current = null; // { shape, faces: Map, edges: Map, vertices: Map }
+
+const TAU = Math.PI * 2;
+// Integración de Gauss de OCCT: exacta en geometría analítica y polinómica. Las splines
+// racionales se aproximan con polinómicas (ver makeSplineEdge) porque ahí pierde precisión.
+const gpropVolume = (s, g) => oc.BRepGProp.VolumeProperties(s, g, false, false, false);
+const gpropSurface = (s, g) => oc.BRepGProp.SurfaceProperties(s, g, false, false);
+// Tolerancia (mm) de la aproximación polinómica de splines racionales.
+const RATIONAL_APPROX_TOL = 1e-5;
+
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+export async function init({ wasmBinary } = {}) {
+  if (oc) return { ms: 0 };
+  const t0 = now();
+  oc = wasmBinary ? await opencascade({ wasmBinary }) : await opencascade();
+  R.setOC(oc);
+  return { ms: now() - t0 };
+}
+
+function needOC() {
+  if (!oc) throw new Error('El motor CAD no está inicializado.');
+}
+
+// ---------- Geometría 2D de segmentos (contrato C1, implementación propia) ----------
+
+const normAng = (a) => {
+  let r = a % TAU;
+  if (r <= 1e-12) r += TAU;
+  return r;
+};
+const arcSweep = (s) => (s.ccw ? normAng(s.a1 - s.a0) : normAng(s.a0 - s.a1));
+const ellSweep = (s) => (s.ccw ? normAng(s.t1 - s.t0) : normAng(s.t0 - s.t1));
+const isFullSweep = (sw) => sw >= TAU - 1e-9;
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+const dist2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+
+function ellPoint(s, t) {
+  const c = Math.cos(s.rot || 0), sn = Math.sin(s.rot || 0);
+  const x = s.rx * Math.cos(t), y = s.ry * Math.sin(t);
+  return [s.c[0] + c * x - sn * y, s.c[1] + sn * x + c * y];
+}
+
+function nurbsPoint(s, u) {
+  const p = s.degree, U = s.knots, P = s.ctrl, W = s.weights;
+  const n = P.length;
+  let k = p;
+  while (k < n - 1 && U[k + 1] <= u) k++;
+  const d = [];
+  for (let j = 0; j <= p; j++) {
+    const w = W ? W[j + k - p] : 1;
+    const q = P[j + k - p];
+    d.push([q[0] * w, q[1] * w, w]);
+  }
+  for (let r = 1; r <= p; r++) {
+    for (let j = p; j >= r; j--) {
+      const i = j + k - p;
+      const den = U[i + p - r + 1] - U[i];
+      const a = den === 0 ? 0 : (u - U[i]) / den;
+      for (let m = 0; m < 3; m++) d[j][m] = (1 - a) * d[j - 1][m] + a * d[j][m];
+    }
+  }
+  return [d[p][0] / d[p][2], d[p][1] / d[p][2]];
+}
+
+// Punto del segmento para t ∈ [0, 1] (proporcional al parámetro).
+function segPoint(s, t) {
+  switch (s.type) {
+    case 'line':
+      return [s.p0[0] + (s.p1[0] - s.p0[0]) * t, s.p0[1] + (s.p1[1] - s.p0[1]) * t];
+    case 'arc': {
+      const a = s.a0 + (s.ccw ? 1 : -1) * arcSweep(s) * t;
+      return [s.c[0] + s.r * Math.cos(a), s.c[1] + s.r * Math.sin(a)];
+    }
+    case 'circle': {
+      const a = (s.ccw ? 1 : -1) * TAU * t;
+      return [s.c[0] + s.r * Math.cos(a), s.c[1] + s.r * Math.sin(a)];
+    }
+    case 'ellipse':
+      return ellPoint(s, s.t0 + (s.ccw ? 1 : -1) * ellSweep(s) * t);
+    case 'bezier': {
+      const [a, b, c, d] = s.pts, m = 1 - t;
+      const k0 = m * m * m, k1 = 3 * m * m * t, k2 = 3 * m * t * t, k3 = t * t * t;
+      return [k0 * a[0] + k1 * b[0] + k2 * c[0] + k3 * d[0], k0 * a[1] + k1 * b[1] + k2 * c[1] + k3 * d[1]];
+    }
+    case 'spline': {
+      const u0 = s.knots[s.degree], u1 = s.knots[s.ctrl.length];
+      return nurbsPoint(s, u0 + (u1 - u0) * t);
+    }
+    default:
+      throw new Error(`Tipo de segmento no soportado: ${s.type}`);
+  }
+}
+const segStart = (s) => segPoint(s, 0);
+const segEnd = (s) => segPoint(s, 1);
+
+function segSamples(s, n = 256) {
+  if (s.type === 'line') return [s.p0, s.p1];
+  const out = [];
+  for (let i = 0; i <= n; i++) out.push(segPoint(s, i / n));
+  return out;
+}
+
+function segReverse(s) {
+  switch (s.type) {
+    case 'line': return { ...s, p0: s.p1, p1: s.p0 };
+    case 'arc': return { ...s, a0: s.a1, a1: s.a0, ccw: !s.ccw };
+    case 'circle': return { ...s, ccw: !s.ccw };
+    case 'ellipse': return { ...s, t0: s.t1, t1: s.t0, ccw: !s.ccw };
+    case 'bezier': return { ...s, pts: [...s.pts].reverse() };
+    case 'spline': {
+      const a = s.knots[0], b = s.knots[s.knots.length - 1];
+      return {
+        ...s,
+        ctrl: [...s.ctrl].reverse(),
+        weights: s.weights ? [...s.weights].reverse() : s.weights,
+        knots: s.knots.map((k) => a + b - k).reverse(),
+      };
+    }
+    default: throw new Error(`Tipo de segmento no soportado: ${s.type}`);
+  }
+}
+
+const loopReverse = (segs) => segs.map(segReverse).reverse();
+
+function loopPolygon(segs, n = 256) {
+  const poly = [];
+  for (const s of segs) {
+    const pts = segSamples(s, n);
+    for (let i = poly.length ? 1 : 0; i < pts.length; i++) poly.push(pts[i]);
+  }
+  return poly;
+}
+
+function polyArea(poly) {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    a += p[0] * q[1] - q[0] * p[1];
+  }
+  return a / 2;
+}
+
+function distToPolyline(p, poly) {
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const ab = sub(b, a), ap = sub(p, a);
+    const L = ab[0] * ab[0] + ab[1] * ab[1];
+    const t = L > 0 ? Math.max(0, Math.min(1, (ap[0] * ab[0] + ap[1] * ab[1]) / L)) : 0;
+    best = Math.min(best, Math.hypot(ap[0] - ab[0] * t, ap[1] - ab[1] * t));
+  }
+  return best;
+}
+
+// Caja envolvente exacta: muestreo denso + refinamiento ternario de cada extremo.
+function loopsBBox(loops) {
+  const lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+  for (const segs of loops) {
+    for (const s of segs) {
+      const n = s.type === 'line' ? 1 : 256;
+      const ts = [];
+      for (let i = 0; i <= n; i++) ts.push(i / n);
+      const pts = ts.map((t) => segPoint(s, t));
+      for (let k = 0; k < 2; k++) {
+        for (const sign of [1, -1]) {
+          let bi = 0;
+          for (let i = 1; i < pts.length; i++) if (sign * pts[i][k] > sign * pts[bi][k]) bi = i;
+          let a = ts[Math.max(0, bi - 1)], b = ts[Math.min(n, bi + 1)];
+          for (let it = 0; it < 80 && n > 1; it++) {
+            const m1 = a + (b - a) / 3, m2 = b - (b - a) / 3;
+            if (sign * segPoint(s, m1)[k] < sign * segPoint(s, m2)[k]) a = m1; else b = m2;
+          }
+          const v = n > 1 ? Math.max(sign * pts[bi][k], sign * segPoint(s, (a + b) / 2)[k]) * sign : pts[bi][k];
+          if (sign > 0) hi[k] = Math.max(hi[k], v); else lo[k] = Math.min(lo[k], v);
+        }
+      }
+    }
+  }
+  return { minU: lo[0], minV: lo[1], maxU: hi[0], maxV: hi[1] };
+}
+
+// ---------- Contornos → aristas OCCT ----------
+
+// Une huecos ≤ tol moviendo extremos de segmentos flexibles; el resto se puentea con líneas.
+function closeGaps(segs, tol, label) {
+  const rigid = (s) => s.type === 'circle' || s.type === 'ellipse';
+  const n = segs.length;
+  const ends = segs.map((s) => ({ ps: segStart(s), pe: segEnd(s) }));
+  const bridges = new Map();
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const a = ends[i].pe, b = ends[j].ps;
+    const gap = dist2(a, b);
+    if (gap > tol) {
+      throw new Error(`${label}: el contorno no cierra (hueco de ${gap.toFixed(4)} mm en (${a[0].toFixed(3)}, ${a[1].toFixed(3)}), mayor que la tolerancia de ${tol} mm).`);
+    }
+    if (gap === 0) continue;
+    const ri = rigid(segs[i]), rj = rigid(segs[j]);
+    if (ri && rj) {
+      if (gap > 1e-7) bridges.set(i, [a, b]);
+      continue;
+    }
+    const J = ri ? a : rj ? b : [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    if (!ri) ends[i].pe = J;
+    if (!rj) ends[j].ps = J;
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push({ seg: segs[i], ...ends[i] });
+    if (bridges.has(i)) {
+      const [a, b] = bridges.get(i);
+      out.push({ seg: { type: 'line', p0: a, p1: b }, ps: a, pe: b });
+    }
+  }
+  return out;
+}
+
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+// Marco de plano: P(x, y) = o + x·ex + y·ey; normal = ex × ey.
+function frame(o, ex, ey) {
+  const n = cross3(ex, ey);
+  return {
+    p: (q) => [o[0] + q[0] * ex[0] + q[1] * ey[0], o[1] + q[0] * ex[1] + q[1] * ey[1], o[2] + q[0] * ex[2] + q[1] * ey[2]],
+    v: (q) => [q[0] * ex[0] + q[1] * ey[0], q[0] * ex[1] + q[1] * ey[1], q[0] * ex[2] + q[1] * ey[2]],
+    n,
+  };
+}
+const FRAME_XY = frame([0, 0, 0], [1, 0, 0], [0, 1, 0]);
+
+function edgeFromCurve(curve) {
+  const mk = new oc.BRepBuilderAPI_MakeEdge(curve);
+  const e = new R.Edge(mk.Edge());
+  mk.delete();
+  return e;
+}
+
+function makeEllipseEdge(s, F, full) {
+  const rot = s.rot || 0;
+  const u = [Math.cos(rot), Math.sin(rot)], v = [-Math.sin(rot), Math.cos(rot)];
+  // Eje mayor = X; si rx < ry se intercambian ejes y el parámetro se desplaza π/2.
+  let A = s.rx, B = s.ry, X = u, shift = 0;
+  if (s.ry > s.rx) { A = s.ry; B = s.rx; X = v; shift = -Math.PI / 2; }
+  const sign = s.ccw ? 1 : -1;
+  const N = F.n.map((c) => c * sign);
+  if (Math.abs(A - B) < 1e-12 * A) {
+    // Círculo degenerado (rx = ry)
+    if (full) return R.makeCircle(A, F.p(s.c), N);
+  }
+  if (full) return R.makeEllipse(A, B, F.p(s.c), N, F.v(X));
+  const start = sign * (s.t0 + shift);
+  return R.makeEllipseArc(A, B, start, start + ellSweep(s), F.p(s.c), N, F.v(X));
+}
+
+function makeSplineEdge(s, ps, pe, F) {
+  const rational = s.weights && s.weights.some((w) => Math.abs(w - s.weights[0]) > 1e-15);
+  if (rational) {
+    // Muestreo denso (por tramo de nudos) y ajuste B-spline polinómico con tolerancia ≤ 1e-5 mm.
+    const n = Math.max(64, 32 * (s.ctrl.length - s.degree) * s.degree);
+    const pts = [];
+    for (let i = 0; i <= n; i++) pts.push(i === 0 ? ps : i === n ? pe : segPoint(s, i / n));
+    return R.makeBSplineApproximation(pts.map(F.p), { tolerance: RATIONAL_APPROX_TOL, degMax: 8, degMin: 3 });
+  }
+  const P = s.ctrl.map((q) => q.slice());
+  P[0] = ps;
+  P[P.length - 1] = pe;
+  const uniq = [], mult = [];
+  for (const k of s.knots) {
+    if (uniq.length && Math.abs(k - uniq[uniq.length - 1]) <= 1e-12 * Math.max(1, Math.abs(k))) mult[mult.length - 1]++;
+    else { uniq.push(k); mult.push(1); }
+  }
+  const poles = new oc.NCollection_Array1_gp_Pnt(1, P.length);
+  const tmp = [];
+  P.forEach((q, i) => {
+    const g = new oc.gp_Pnt(...F.p(q));
+    poles.SetValue(i + 1, g);
+    tmp.push(g);
+  });
+  const knots = new oc.NCollection_Array1_double(1, uniq.length);
+  const mults = new oc.NCollection_Array1_int(1, uniq.length);
+  uniq.forEach((k, i) => { knots.SetValue(i + 1, k); mults.SetValue(i + 1, mult[i]); });
+  const curve = new oc.Geom_BSplineCurve(poles, knots, mults, s.degree, false);
+  const e = edgeFromCurve(curve);
+  for (const o of [...tmp, poles, knots, mults]) o.delete();
+  return e;
+}
+
+function makeEdge({ seg: s, ps, pe }, F) {
+  switch (s.type) {
+    case 'line':
+      return R.makeLine(F.p(ps), F.p(pe));
+    case 'arc': {
+      if (isFullSweep(arcSweep(s))) return R.makeCircle(s.r, F.p(s.c), F.n.map((c) => c * (s.ccw ? 1 : -1)));
+      return R.makeThreePointArc(F.p(ps), F.p(segPoint(s, 0.5)), F.p(pe));
+    }
+    case 'circle':
+      return R.makeCircle(s.r, F.p(s.c), F.n.map((c) => c * (s.ccw ? 1 : -1)));
+    case 'ellipse':
+      return makeEllipseEdge(s, F, isFullSweep(ellSweep(s)));
+    case 'bezier':
+      return R.makeBezierCurve([ps, s.pts[1], s.pts[2], pe].map(F.p));
+    case 'spline':
+      return makeSplineEdge(s, ps, pe, F);
+    default:
+      throw new Error(`Tipo de segmento no soportado: ${s.type}`);
+  }
+}
+
+function makeWire(segs, F, tol, label) {
+  const parts = closeGaps(segs, tol, label);
+  const edges = parts.map((p) => makeEdge(p, F));
+  let wire;
+  try {
+    wire = R.assembleWire(edges);
+  } catch (e) {
+    throw new Error(`${label}: no se pudo formar un contorno cerrado (${e.message || e}).`);
+  } finally {
+    edges.forEach((e) => e.delete());
+  }
+  return wire;
+}
+
+const loopSegs = (loop, label) => {
+  const segs = loop && (loop.segs || loop);
+  if (!Array.isArray(segs) || !segs.length) throw new Error(`${label}: contorno vacío.`);
+  return segs;
+};
+
+// Cara plana: exterior antihorario y agujeros horarios (en el marco F); verifica el área.
+function makeRegionFace(outerSegs, holeSegsList, F, tol, label) {
+  let outer = outerSegs;
+  const oPoly = loopPolygon(outer);
+  let oArea = polyArea(oPoly);
+  if (oArea < 0) { outer = loopReverse(outer); oArea = -oArea; }
+  if (oArea <= 0) throw new Error(`${label}: el contorno exterior tiene área nula.`);
+  const holes = holeSegsList.map((h) => {
+    const a = polyArea(loopPolygon(h));
+    return { segs: a > 0 ? loopReverse(h) : h, area: Math.abs(a) };
+  });
+  const expected = oArea - holes.reduce((t, h) => t + h.area, 0);
+  const outerWire = makeWire(outer, F, tol, label);
+  const holeWires = holes.map((h, i) => makeWire(h.segs, F, tol, `${label}, agujero ${i + 1}`));
+  let face;
+  try {
+    face = R.makeFace(outerWire, holeWires);
+  } catch (e) {
+    throw new Error(`${label}: no se pudo crear la cara (${e.message || e}).`);
+  } finally {
+    outerWire.delete();
+    holeWires.forEach((w) => w.delete());
+  }
+  const area = surfaceArea(face);
+  if (!(area > 0) || Math.abs(area - expected) > 1e-3 * oArea + 1e-6) {
+    face.delete();
+    throw new Error(`${label}: la cara resultante es inconsistente (área ${area.toFixed(4)} mm² frente a ${expected.toFixed(4)} mm² esperados). Revise que los agujeros estén dentro del contorno y no se crucen.`);
+  }
+  return face;
+}
+
+function surfaceArea(shape) {
+  const g = new oc.GProp_GProps();
+  gpropSurface(shape.wrapped, g);
+  const a = g.Mass();
+  g.delete();
+  return a;
+}
+
+function volumeOf(shape) {
+  const g = new oc.GProp_GProps();
+  gpropVolume(shape.wrapped, g);
+  const v = g.Mass();
+  g.delete();
+  return v;
+}
+
+function extrudeFace(face, vec) {
+  const v = new R.Vector(vec);
+  const s = R.basicFaceExtrusion(face, v);
+  v.delete();
+  return s;
+}
+
+// Operaciones booleanas que liberan los operandos.
+function fuse(a, b) { const r = a.fuse(b); a.delete(); b.delete(); return r; }
+function cut(a, b) { const r = a.cut(b); a.delete(); b.delete(); return r; }
+function common(a, b) { const r = a.intersect(b); a.delete(); b.delete(); return r; }
+
+const regionLabel = (r, i) => `Región «${r.id ?? i + 1}»`;
+
+// ---------- Modos de construcción ----------
+
+function buildExtrude(job, warnings) {
+  const ex = job.extrude || {};
+  const tol = job.tol ?? 0.01;
+  const regions = job.regions || [];
+  if (!regions.length) throw new Error('No hay regiones para extruir.');
+  let shape = null;
+  const tops = [];
+  regions.forEach((reg, i) => {
+    const label = regionLabel(reg, i);
+    const h = reg.height ?? ex.thickness;
+    if (!(h > 0)) throw new Error(`${label}: el espesor/altura debe ser mayor que cero.`);
+    const z0 = reg.z0 ?? (ex.symmetric ? -h / 2 : 0);
+    const holes = reg.holes || [];
+    const through = holes.filter((hh) => (hh.op || 'through') === 'through').map((hh, k) => loopSegs(hh.loop, `${label}, agujero ${k + 1}`));
+    const outer = loopSegs(reg.outer, label);
+    const F = frame([0, 0, z0], [1, 0, 0], [0, 1, 0]);
+    const face = makeRegionFace(outer, through, F, tol, label);
+    let solid = extrudeFace(face, [0, 0, h]);
+    face.delete();
+    holes.forEach((hh, k) => {
+      if (hh.op !== 'blind') return;
+      const hl = `${label}, agujero ciego ${k + 1}`;
+      const d = hh.depth;
+      if (!(d > 0)) throw new Error(`${hl}: la profundidad debe ser mayor que cero.`);
+      const depth = Math.min(d, h);
+      if (d > h) warnings.push(`${hl}: la profundidad (${d} mm) supera la altura (${h} mm); se hace pasante.`);
+      const over = Math.max(1, h);
+      const Fh = frame([0, 0, z0 + h - depth], [1, 0, 0], [0, 1, 0]);
+      const hf = makeRegionFace(loopSegs(hh.loop, hl), [], Fh, tol, hl);
+      const tool = extrudeFace(hf, [0, 0, depth + over]);
+      hf.delete();
+      solid = cut(solid, tool);
+    });
+    tops.push({ top: z0 + h, poly: loopPolygon(outer, 1024) });
+    shape = shape ? fuse(shape, solid) : solid;
+  });
+  shape = applyFillets(shape, ex.fillets || {}, tops, tol, warnings);
+  return shape;
+}
+
+function edgePts(e) {
+  const a = e.startPoint, b = e.endPoint, m = e.pointAt(0.5);
+  const r = [a.toTuple(), b.toTuple(), m.toTuple()];
+  a.delete(); b.delete(); m.delete();
+  return r;
+}
+
+function runFillet(shape, edges, radius, chamfer) {
+  const mk = chamfer ? new oc.BRepFilletAPI_MakeChamfer(shape.wrapped) : new oc.BRepFilletAPI_MakeFillet(shape.wrapped, oc.ChFi3d_FilletShape.ChFi3d_Rational);
+  try {
+    for (const e of edges) mk.Add(radius, e.wrapped);
+    const res = R.cast(mk.Shape());
+    if (!(volumeOf(res) > 0)) throw new Error('resultado vacío');
+    return res;
+  } finally {
+    mk.delete();
+  }
+}
+
+function applyFillets(shape, f, tops, tol, warnings) {
+  const vr = f.vertical || 0, tr = f.top || 0, cr = f.chamferTop || 0;
+  const tryOp = (name, value, select, chamfer) => {
+    const edges = shape.edges.filter(select);
+    if (!edges.length) {
+      warnings.push(`${name}: no se encontraron aristas a las que aplicarlo.`);
+      return;
+    }
+    try {
+      const res = runFillet(shape, edges, value, chamfer);
+      shape.delete();
+      shape = res;
+    } catch (e) {
+      warnings.push(`${name} (${value} mm) no se pudo aplicar; se conserva la pieza sin él.`);
+    } finally {
+      edges.forEach((e) => e.delete());
+    }
+  };
+  if (vr > 0) {
+    tryOp('Redondeo de aristas verticales', vr, (e) => {
+      if (e.geomType !== 'LINE') return false;
+      const [a, b] = edgePts(e);
+      return Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[2] - b[2]) > 1e-6;
+    }, false);
+  }
+  const slack = vr + Math.max(tol, 1e-3);
+  const isTopOuter = (e) => {
+    const pts = edgePts(e);
+    return tops.some(({ top, poly }) => pts.every((p) => Math.abs(p[2] - top) < 1e-6) && distToPolyline(pts[2], poly) <= slack);
+  };
+  if (tr > 0) tryOp('Redondeo del borde superior', tr, isTopOuter, false);
+  else if (cr > 0) tryOp('Chaflán del borde superior', cr, isTopOuter, true);
+  if (tr > 0 && cr > 0) warnings.push('Se pidieron redondeo y chaflán superiores a la vez; solo se aplicó el redondeo.');
+  return shape;
+}
+
+function buildRevolve(job, warnings) {
+  const rv = job.revolve || {};
+  const tol = job.tol ?? 0.01;
+  const axis = rv.axis;
+  if (!axis || !axis.p || !axis.d) throw new Error('Falta definir el eje de revolución.');
+  const dl = Math.hypot(axis.d[0], axis.d[1]);
+  if (!(dl > 0)) throw new Error('El eje de revolución tiene dirección nula.');
+  const d = [axis.d[0] / dl, axis.d[1] / dl];
+  const angle = rv.angleDeg ?? 360;
+  if (!(angle > 0 && angle <= 360)) throw new Error('El ángulo de revolución debe estar entre 0 y 360°.');
+  const regions = job.regions || [];
+  if (!regions.length) throw new Error('No hay regiones para revolucionar.');
+  let shape = null;
+  regions.forEach((reg, i) => {
+    const label = regionLabel(reg, i);
+    const outer = loopSegs(reg.outer, label);
+    let lo = Infinity, hi = -Infinity;
+    for (const p of loopPolygon(outer)) {
+      const s = d[0] * (p[1] - axis.p[1]) - d[1] * (p[0] - axis.p[0]);
+      lo = Math.min(lo, s); hi = Math.max(hi, s);
+    }
+    const eps = Math.max(tol, 1e-9);
+    if (lo < -eps && hi > eps) throw new Error(`${label}: el perfil cruza el eje de revolución; debe quedar a un solo lado del eje.`);
+    const holes = (reg.holes || []).filter((h) => (h.op || 'through') !== 'none');
+    if (holes.some((h) => h.op === 'blind')) warnings.push(`${label}: en revolución los agujeros ciegos se tratan como huecos del perfil.`);
+    const face = makeRegionFace(outer, holes.map((h, k) => loopSegs(h.loop, `${label}, agujero ${k + 1}`)), FRAME_XY, tol, label);
+    let solid;
+    try {
+      solid = R.revolution(face, [axis.p[0], axis.p[1], 0], [d[0], d[1], 0], angle);
+    } finally {
+      face.delete();
+    }
+    shape = shape ? fuse(shape, solid) : solid;
+  });
+  return shape;
+}
+
+const VIEW_DEF = {
+  top: { dims: ['W', 'D'], depth: 'H' },
+  front: { dims: ['W', 'H'], depth: 'D' },
+  right: { dims: ['D', 'H'], depth: 'W' },
+  left: { dims: ['D', 'H'], depth: 'W' },
+};
+const DIM_NAME = { W: 'ancho (X)', D: 'profundidad (Y)', H: 'altura (Z)' };
+
+function buildMultiview(job, warnings) {
+  const tol = job.tol ?? 0.01;
+  const views = (job.multiview && job.multiview.views) || [];
+  const roles = new Set(views.map((v) => v.role));
+  if (views.length < 2 || roles.size < 2) throw new Error('La reconstrucción por vistas requiere al menos dos vistas distintas.');
+  const dims = { W: [], D: [], H: [] };
+  const infos = views.map((v, vi) => {
+    const def = VIEW_DEF[v.role];
+    if (!def) throw new Error(`Vista ${vi + 1}: papel desconocido «${v.role}».`);
+    if (!v.regions || !v.regions.length) throw new Error(`Vista «${v.role}»: no tiene regiones.`);
+    const bb = loopsBBox(v.regions.map((r, i) => loopSegs(r.outer, `Vista «${v.role}», región ${i + 1}`)));
+    dims[def.dims[0]].push({ role: v.role, val: bb.maxU - bb.minU });
+    dims[def.dims[1]].push({ role: v.role, val: bb.maxV - bb.minV });
+    return { v, def, bb };
+  });
+  const size = {};
+  for (const k of ['W', 'D', 'H']) {
+    const list = dims[k];
+    if (!list.length) throw new Error(`Las vistas dadas no definen el ${DIM_NAME[k]}; añada otra vista.`);
+    const vals = list.map((x) => x.val);
+    const mx = Math.max(...vals), mn = Math.min(...vals);
+    if (mx > 0 && (mx - mn) / mx > 0.005) {
+      warnings.push(`Las vistas no coinciden en ${DIM_NAME[k]}: ${list.map((x) => `${x.role} ${x.val.toFixed(3)} mm`).join(', ')} (diferencia > 0,5 %).`);
+    }
+    size[k] = mx;
+  }
+  let shape = null;
+  for (const { v, def, bb } of infos) {
+    let F, vec;
+    const depth = size[def.depth];
+    if (v.role === 'top') { F = frame([-bb.minU, -bb.minV, 0], [1, 0, 0], [0, 1, 0]); vec = [0, 0, depth]; }
+    else if (v.role === 'front') { F = frame([-bb.minU, 0, -bb.minV], [1, 0, 0], [0, 0, 1]); vec = [0, depth, 0]; }
+    else if (v.role === 'right') { F = frame([0, -bb.minU, -bb.minV], [0, 1, 0], [0, 0, 1]); vec = [depth, 0, 0]; }
+    else { F = frame([0, bb.maxU, -bb.minV], [0, -1, 0], [0, 0, 1]); vec = [depth, 0, 0]; }
+    let prism = null;
+    v.regions.forEach((r, i) => {
+      const label = `Vista «${v.role}», región ${i + 1}`;
+      const face = makeRegionFace(loopSegs(r.outer, label), (r.holes || []).map((h, k) => loopSegs(h, `${label}, agujero ${k + 1}`)), F, tol, label);
+      const s = extrudeFace(face, vec);
+      face.delete();
+      prism = prism ? fuse(prism, s) : s;
+    });
+    shape = shape ? common(shape, prism) : prism;
+  }
+  return shape;
+}
+
+// ---------- Topología, propiedades y mallas ----------
+
+const hashOf = (s) => oc.ReplicadShapeHasher.HashCode(s, R.HASH_CODE_MAX);
+const pnt = (p) => [p.X(), p.Y(), p.Z()];
+const dirArr = (d) => [d.X(), d.Y(), d.Z()];
+function ax1Info(ax) {
+  const l = ax.Location(), d = ax.Direction();
+  const r = { p: pnt(l), d: dirArr(d) };
+  l.delete(); d.delete();
+  return r;
+}
+
+const FACE_TYPES = { PLANE: 'plane', CYLINDRE: 'cylinder', CONE: 'cone', SPHERE: 'sphere', TORUS: 'torus', BSPLINE_SURFACE: 'bspline', BEZIER_SURFACE: 'bspline' };
+const EDGE_TYPES = { LINE: 'line', CIRCLE: 'circle', ELLIPSE: 'ellipse', BSPLINE_CURVE: 'bspline', BEZIER_CURVE: 'bspline' };
+
+function faceInfo(face, id) {
+  const type = FACE_TYPES[face.geomType] || 'other';
+  const g = new oc.GProp_GProps();
+  oc.BRepGProp.SurfaceProperties(face.wrapped, g, false, false);
+  const c = g.CentreOfMass();
+  const info = { id, type, area: g.Mass(), center: pnt(c) };
+  c.delete(); g.delete();
+  const ad = new oc.BRepAdaptor_Surface(face.wrapped, true);
+  try {
+    if (type === 'plane') {
+      const n = face.normalAt();
+      info.normal = n.toTuple();
+      n.delete();
+    } else if (type === 'cylinder') {
+      const cy = ad.Cylinder(), ax = cy.Axis();
+      info.radius = cy.Radius();
+      info.axis = ax1Info(ax);
+      ax.delete(); cy.delete();
+    } else if (type === 'cone') {
+      const co = ad.Cone(), ax = co.Axis();
+      info.radius = co.RefRadius();
+      info.semiAngleDeg = (co.SemiAngle() * 180) / Math.PI;
+      info.axis = ax1Info(ax);
+      ax.delete(); co.delete();
+    } else if (type === 'sphere') {
+      const sp = ad.Sphere(), l = sp.Location();
+      info.radius = sp.Radius();
+      info.sphereCenter = pnt(l);
+      l.delete(); sp.delete();
+    }
+    // Toro: gp_Torus no está enlazado en esta compilación; solo se informa el tipo.
+  } finally {
+    ad.delete();
+  }
+  return info;
+}
+
+function edgeInfo(edge, id) {
+  const type = EDGE_TYPES[edge.geomType] || 'other';
+  const [start, end] = edgePts(edge);
+  const info = { id, type, length: edge.length, start, end, closed: oc.BRep_Tool.IsClosed(edge.wrapped) };
+  const ad = new oc.BRepAdaptor_Curve(edge.wrapped);
+  try {
+    if (type === 'line') {
+      const L = Math.hypot(end[0] - start[0], end[1] - start[1], end[2] - start[2]) || 1;
+      info.dir = [0, 1, 2].map((k) => (end[k] - start[k]) / L);
+    } else if (type === 'circle' || type === 'ellipse') {
+      const cv = type === 'circle' ? ad.Circle() : ad.Ellipse();
+      const ax = cv.Axis(), l = ax.Location(), d = ax.Direction();
+      if (type === 'circle') info.radius = cv.Radius();
+      else { info.radius = cv.MajorRadius(); info.minorRadius = cv.MinorRadius(); }
+      info.center = pnt(l);
+      info.normal = dirArr(d);
+      l.delete(); d.delete(); ax.delete(); cv.delete();
+    }
+  } finally {
+    ad.delete();
+  }
+  return info;
+}
+
+function collectTopology(shape) {
+  const faces = new Map(), edges = new Map(), vertices = new Map();
+  const topo = { faces: [], edges: [], vertices: [] };
+  for (const f of shape.faces) {
+    const id = f.hashCode;
+    faces.set(id, f);
+    topo.faces.push(faceInfo(f, id));
+  }
+  for (const e of shape.edges) {
+    const id = e.hashCode;
+    edges.set(id, e);
+    topo.edges.push(edgeInfo(e, id));
+  }
+  for (const v of R.iterTopo(shape.wrapped, 'vertex')) {
+    const id = hashOf(v);
+    vertices.set(id, v);
+    const p = oc.BRep_Tool.Pnt(v);
+    topo.vertices.push({ id, p: pnt(p) });
+    p.delete();
+  }
+  return { maps: { faces, edges, vertices }, topo };
+}
+
+// Valores y vectores propios de una matriz simétrica 3×3 (Jacobi cíclico).
+function jacobiEigen(M) {
+  const a = M.map((r) => r.slice());
+  const v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let sweep = 0; sweep < 100; sweep++) {
+    const off = Math.abs(a[0][1]) + Math.abs(a[0][2]) + Math.abs(a[1][2]);
+    const scale = Math.abs(a[0][0]) + Math.abs(a[1][1]) + Math.abs(a[2][2]);
+    if (off <= 1e-15 * scale || off === 0) break;
+    for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+      if (a[p][q] === 0) continue;
+      const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+      const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+      const c = 1 / Math.sqrt(t * t + 1), s = t * c;
+      for (let k = 0; k < 3; k++) {
+        const akp = a[k][p], akq = a[k][q];
+        a[k][p] = c * akp - s * akq;
+        a[k][q] = s * akp + c * akq;
+      }
+      for (let k = 0; k < 3; k++) {
+        const apk = a[p][k], aqk = a[q][k];
+        a[p][k] = c * apk - s * aqk;
+        a[q][k] = s * apk + c * aqk;
+      }
+      for (let k = 0; k < 3; k++) {
+        const vkp = v[k][p], vkq = v[k][q];
+        v[k][p] = c * vkp - s * vkq;
+        v[k][q] = s * vkp + c * vkq;
+      }
+    }
+  }
+  const pairs = [0, 1, 2].map((i) => ({ val: a[i][i], vec: [v[0][i], v[1][i], v[2][i]] }));
+  pairs.sort((x, y) => x.val - y.val);
+  return { moments: pairs.map((p) => p.val), axes: pairs.map((p) => p.vec) };
+}
+
+function computeProps(shape, topo) {
+  const g = new oc.GProp_GProps();
+  gpropVolume(shape.wrapped, g);
+  const volume = g.Mass();
+  const cP = g.CentreOfMass();
+  const centroid = pnt(cP);
+  const I = (dx, dy, dz) => {
+    const d = new oc.gp_Dir(dx, dy, dz), ax = new oc.gp_Ax1(cP, d);
+    const val = g.MomentOfInertia(ax);
+    ax.delete(); d.delete();
+    return val;
+  };
+  const Ixx = I(1, 0, 0), Iyy = I(0, 1, 0), Izz = I(0, 0, 1);
+  // I(u) = uᵀ·T·u con u = (a+b)/√2 ⇒ Pab = (Iaa + Ibb)/2 − I(u)
+  const Pxy = (Ixx + Iyy) / 2 - I(1, 1, 0), Pxz = (Ixx + Izz) / 2 - I(1, 0, 1), Pyz = (Iyy + Izz) / 2 - I(0, 1, 1);
+  cP.delete(); g.delete();
+  const principal = jacobiEigen([[Ixx, -Pxy, -Pxz], [-Pxy, Iyy, -Pyz], [-Pxz, -Pyz, Izz]]);
+
+  const box = new oc.Bnd_Box();
+  oc.BRepBndLib.AddOptimal(shape.wrapped, box, false, false);
+  const lo = box.CornerMin(), hi = box.CornerMax();
+  const min = pnt(lo), max = pnt(hi);
+  lo.delete(); hi.delete(); box.delete();
+
+  const shells = [...R.iterTopo(shape.wrapped, 'shell')];
+  const solids = [...R.iterTopo(shape.wrapped, 'solid')].length;
+  const closed = shells.length > 0 && shells.every((s) => oc.BRep_Tool.IsClosed(s));
+  const an = new oc.BRepCheck_Analyzer(shape.wrapped, true, false);
+  const valid = an.IsValid();
+  an.delete();
+  const faceTypes = {};
+  for (const f of topo.faces) faceTypes[f.type] = (faceTypes[f.type] || 0) + 1;
+  return {
+    volume,
+    area: surfaceArea(shape),
+    centroid,
+    inertia: { Ixx, Iyy, Izz, Pxy, Pxz, Pyz },
+    principal,
+    bbox: { min, max, size: [0, 1, 2].map((k) => max[k] - min[k]) },
+    counts: { solids, shells: shells.length, faces: topo.faces.length, edges: topo.edges.length, vertices: topo.vertices.length, faceTypes },
+    valid,
+    closed,
+  };
+}
+
+function meshOpts(opts, bbox) {
+  const diag = bbox ? Math.hypot(...bbox.size) : 100;
+  return {
+    tolerance: opts && opts.tolerance > 0 ? opts.tolerance : Math.max(0.001, diag * 2e-4),
+    angularTolerance: opts && opts.angularTolerance > 0 ? opts.angularTolerance : 0.15,
+  };
+}
+
+function meshShape(shape, o) {
+  const m = shape.mesh(o);
+  return {
+    vertices: new Float32Array(m.vertices),
+    normals: new Float32Array(m.normals),
+    triangles: new Uint32Array(m.triangles),
+    faceGroups: m.faceGroups,
+  };
+}
+
+// meshEdges ya entrega pares de puntos por segmento (cada grupo tiene count par).
+function meshEdgeLines(shape, o) {
+  const m = shape.meshEdges(o);
+  for (const gr of m.edgeGroups) {
+    if (gr.count % 2) throw new Error('Formato inesperado en las aristas teseladas.');
+  }
+  return { positions: new Float32Array(m.lines), edgeGroups: m.edgeGroups };
+}
+
+function releaseCurrent() {
+  if (!current) return;
+  for (const m of [current.faces, current.edges]) for (const s of m.values()) s.delete();
+  for (const v of current.vertices.values()) v.delete();
+  current.shape.delete();
+  current = null;
+}
+
+function ocError(e) {
+  if (e instanceof Error) return e;
+  return new Error(`Error interno de OpenCascade (${typeof e === 'number' ? `código ${e}` : String(e)}). Revise la geometría del plano.`);
+}
+
+export function build(job) {
+  needOC();
+  if (!job || !job.mode) throw new Error('Trabajo de construcción sin modo.');
+  const warnings = [];
+  const t0 = now();
+  let shape;
+  try {
+    if (job.mode === 'extrude') shape = buildExtrude(job, warnings);
+    else if (job.mode === 'revolve') shape = buildRevolve(job, warnings);
+    else if (job.mode === 'multiview') shape = buildMultiview(job, warnings);
+    else throw new Error(`Modo de construcción desconocido: ${job.mode}`);
+  } catch (e) {
+    throw ocError(e);
+  }
+  const buildMs = now() - t0;
+  if (!(volumeOf(shape) > 0)) {
+    shape.delete();
+    throw new Error('La pieza resultante está vacía (volumen nulo). Revise las vistas o regiones.');
+  }
+  releaseCurrent();
+  const t1 = now();
+  const { maps, topo } = collectTopology(shape);
+  const props = computeProps(shape, topo);
+  current = { shape, ...maps };
+  const t2 = now();
+  const mo = meshOpts(job.mesh, props.bbox);
+  const mesh = meshShape(shape, mo);
+  const edges = meshEdgeLines(shape, mo);
+  const t3 = now();
+  if (!props.valid) warnings.push('El sólido no supera la verificación de validez de OpenCascade; los resultados pueden ser imprecisos.');
+  if (!props.closed) warnings.push('El sólido no está cerrado (tiene bordes libres).');
+  if (props.counts.solids > 1) warnings.push(`La pieza tiene ${props.counts.solids} sólidos separados.`);
+  return { mesh, edges, topology: topo, props, warnings, timings: { buildMs, meshMs: t3 - t2, propsMs: t2 - t1 } };
+}
+
+function needShape() {
+  needOC();
+  if (!current) throw new Error('No hay ninguna pieza construida.');
+}
+
+function resolveEntity(x) {
+  if (!x) throw new Error('Entidad de medición vacía.');
+  if (x.kind === 'point') {
+    const p = new oc.gp_Pnt(x.p[0], x.p[1], x.p[2]);
+    const mk = new oc.BRepBuilderAPI_MakeVertex(p);
+    const v = mk.Vertex();
+    mk.delete(); p.delete();
+    return { shape: v, owned: true };
+  }
+  const map = { face: current.faces, edge: current.edges, vertex: current.vertices }[x.kind];
+  if (!map) throw new Error(`Tipo de entidad desconocido: ${x.kind}`);
+  const s = map.get(x.id);
+  if (!s) throw new Error(`No existe la entidad ${x.kind} ${x.id} en la pieza actual.`);
+  return { shape: s.wrapped || s, owned: false };
+}
+
+export function distance(a, b) {
+  needShape();
+  const A = resolveEntity(a), B = resolveEntity(b);
+  const ds = new oc.BRepExtrema_DistShapeShape(A.shape, B.shape);
+  try {
+    if (!ds.IsDone() || ds.NbSolution() < 1) throw new Error('No se pudo calcular la distancia.');
+    const p1 = ds.PointOnShape1(1), p2 = ds.PointOnShape2(1);
+    const r = { distance: ds.Value(), p1: pnt(p1), p2: pnt(p2) };
+    p1.delete(); p2.delete();
+    return r;
+  } finally {
+    ds.delete();
+    if (A.owned) A.shape.delete();
+    if (B.owned) B.shape.delete();
+  }
+}
+
+function readFS(path, asText) {
+  const data = oc.FS.readFile(path, asText ? { encoding: 'utf8' } : undefined);
+  oc.FS.unlink(path);
+  return data;
+}
+
+export function exportShape(opts = {}) {
+  needShape();
+  const format = opts.format || 'step';
+  const shape = current.shape;
+  if (format === 'step') {
+    const doc = R.createAssembly([{ shape, name: opts.name || 'pieza', color: '#9aa4ad' }]);
+    const tmp = new oc.STEPCAFControl_Writer();
+    oc.Interface_Static.SetCVal('xstep.cascade.unit', 'MM');
+    oc.Interface_Static.SetCVal('write.step.unit', 'MM');
+    tmp.delete();
+    const session = new oc.XSControl_WorkSession();
+    const writer = new oc.STEPCAFControl_Writer(session, false);
+    const progress = new oc.Message_ProgressRange();
+    try {
+      writer.SetColorMode(true);
+      writer.SetNameMode(true);
+      oc.Interface_Static.SetIVal('write.surfacecurve.mode', 1);
+      oc.Interface_Static.SetIVal('write.precision.mode', 0);
+      oc.Interface_Static.SetIVal('write.step.assembly', 2);
+      oc.Interface_Static.SetIVal('write.step.schema', 5);
+      if (!writer.Perform(doc.wrapped, 'pieza.step', progress)) throw new Error('No se pudo escribir el archivo STEP.');
+      return { data: readFS('/pieza.step', true), mime: 'application/step', ext: 'step' };
+    } finally {
+      progress.delete(); writer.delete(); session.delete(); doc.delete();
+    }
+  }
+  if (format === 'stl' || format === 'stl-ascii') {
+    const ascii = format === 'stl-ascii';
+    const o = meshOpts(opts, null);
+    if (!(opts.tolerance > 0)) {
+      const box = new oc.Bnd_Box();
+      oc.BRepBndLib.AddOptimal(shape.wrapped, box, false, false);
+      const lo = box.CornerMin(), hi = box.CornerMax();
+      o.tolerance = Math.max(0.001, Math.hypot(hi.X() - lo.X(), hi.Y() - lo.Y(), hi.Z() - lo.Z()) * 2e-4);
+      lo.delete(); hi.delete(); box.delete();
+    }
+    oc.ReplicadMeshExtractor.mesh(shape.wrapped, o.tolerance, o.angularTolerance);
+    if (!oc.StlAPI.Write(shape.wrapped, 'pieza.stl', ascii)) throw new Error('No se pudo escribir el archivo STL.');
+    const raw = readFS('/pieza.stl', ascii);
+    const data = ascii ? raw : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+    return { data, mime: ascii ? 'model/stl' : 'model/stl', ext: 'stl' };
+  }
+  throw new Error(`Formato de exportación no soportado: ${format}`);
+}
+
+export function tessellate(opts = {}) {
+  needShape();
+  return meshShape(current.shape, meshOpts(opts, null));
+}
+
+export async function handle({ type, payload } = {}) {
+  try {
+    switch (type) {
+      case 'init': return await init(payload || {});
+      case 'build': return build(payload);
+      case 'distance': return distance(payload.a, payload.b);
+      case 'export': return exportShape(payload || {});
+      case 'tessellate': return tessellate(payload || {});
+      default: throw new Error(`Mensaje desconocido para el motor CAD: ${type}`);
+    }
+  } catch (e) {
+    throw ocError(e);
+  }
+}
