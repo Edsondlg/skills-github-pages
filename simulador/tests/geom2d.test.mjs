@@ -6,6 +6,8 @@ import {
   segMomentTerms, segTransform, isClosedSegment, segClosestPoint, segSnapPoints, segSweep,
 } from '../src/geom2d/segments.js';
 import { buildLoops, loopInfo, orientLoop, pointInPolygon, buildRegions, bboxOfSegments } from '../src/geom2d/loops.js';
+// Tiempo de CPU del proceso (ms): no depende de la carga de otros procesos, a diferencia del reloj.
+const cpuMs = () => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
 
 const PI = Math.PI;
 const rel = (a, b) => Math.abs(a - b) / Math.max(Math.abs(b), 1e-300);
@@ -261,9 +263,9 @@ test('7. buildLoops: orden y sentido, tolerancia de unión, duplicados y rendimi
   const big = [];
   for (let i = 0; i < 5000; i++) big.push(...sq((i % 100) * 3, Math.floor(i / 100) * 3, 2));
   shuffle(big);
-  const t0 = performance.now();
+  const t0 = cpuMs();
   const g = buildLoops(big.map((s) => (rnd() < 0.5 ? segReverse(s) : s)));
-  const ms = performance.now() - t0;
+  const ms = cpuMs() - t0;
   assert.equal(g.loops.length, 5000);
   assert.equal(g.open.length, 0);
   assert.ok(ms < 1000, `${ms.toFixed(0)} ms`);

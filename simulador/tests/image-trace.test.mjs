@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { traceImage } from '../src/importers/image-trace.js';
 import { buildLoops, loopInfo, buildRegions } from '../src/geom2d/loops.js';
+// Tiempo de CPU del proceso (ms): no depende de la carga de otros procesos, a diferencia del reloj.
+const cpuMs = () => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
 
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg ?? ''} ${a} vs ${b}`);
 const count = (segs, t) => segs.filter((s) => s.type === t).length;
@@ -189,9 +191,9 @@ test('rendimiento: 2000×2000 en menos de 1.5 s', () => {
     return true;
   }, { ss: 1 });
   traceImage(img); // calentamiento del JIT
-  const t0 = performance.now();
+  const t0 = cpuMs();
   const { stats } = traceImage(img);
-  const ms = performance.now() - t0;
+  const ms = cpuMs() - t0;
   assert.equal(stats.contours, 122);
   assert.ok(ms < 1500, `${ms.toFixed(0)} ms`);
 });

@@ -8,6 +8,8 @@ import { parseDXF } from '../src/importers/dxf.js';
 import { buildLoops, buildRegions, loopInfo } from '../src/geom2d/loops.js';
 import { segStart, segEnd, segPointAt, segLength, segAreaTerm, segClosestPoint, segTangent } from '../src/geom2d/segments.js';
 import { DxfWriter } from '../scripts/dxf-writer.mjs';
+// Tiempo de CPU del proceso (ms): no depende de la carga de otros procesos, a diferencia del reloj.
+const cpuMs = () => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
 
 const PI = Math.PI;
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -293,9 +295,9 @@ test('9. Rendimiento: 100k LINE en < 1.5 s', () => {
     parts.push(`0\nLINE\n5\n${(i + 256).toString(16)}\n100\nAcDbEntity\n8\nCONTORNO\n100\nAcDbLine\n10\n${i}.5\n20\n${i % 977}.25\n30\n0.0\n11\n${i + 1}.5\n21\n${(i * 7) % 991}.75\n31\n0.0\n`);
   parts.push('0\nENDSEC\n0\nEOF\n');
   const text = parts.join('');
-  const t0 = performance.now();
+  const t0 = cpuMs();
   const r = parseDXF(text);
-  const ms = performance.now() - t0;
+  const ms = cpuMs() - t0;
   assert.equal(r.segments.length, 100000);
   assert.deepEqual(r.segments[99999].p1, [100000.5, (99999 * 7) % 991 + 0.75]);
   assert.ok(ms < 1500, `${ms.toFixed(0)} ms`);
