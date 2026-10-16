@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulador de Doblado Rotativo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/panels.css">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="app-top">
+    <div class="app-brand">
+      <svg class="app-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20V12a6 6 0 0 1 6-6h12" /><circle cx="9" cy="12" r="2.2" /></svg>
+      <span class="app-brand-name">Simulador de Doblado Rotativo</span>
+    </div>
+    <div class="app-part" id="app-part">
+      <span class="app-part-name" id="app-part-name">—</span>
+      <button type="button" class="app-file-chip" id="app-file-chip" title="Abrir archivo STEP (.stp, .step)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.5h6.5L13 5v9.5H3z M9.5 1.5V5H13" /></svg>
+        <span id="app-file-name">Sin archivo</span>
+      </button>
+      <input type="file" id="app-file-input" accept=".stp,.step,.STP,.STEP" hidden>
+    </div>
+    <div class="app-flags" id="app-flags" aria-live="polite"></div>
+    <div class="app-theme" role="group" aria-label="Tema de color" id="app-theme"></div>
+    <div class="app-progress" id="app-progress" role="progressbar" aria-label="Recalculando" aria-hidden="true"><span></span></div>
+  </header>
+  <main class="app-main" id="app-main">
+    <section class="app-view" aria-label="Simulación 3D">
+      <div class="app-stage" id="app-stage">
+        <div class="app-canvas" id="app-canvas"></div>
+      </div>
+      <div class="app-timeline" id="app-timeline"></div>
+    </section>
+    <aside class="app-side" aria-label="Resultados">
+      <div class="app-tabs" role="tablist" id="app-tabs" aria-label="Paneles de resultados"></div>
+      <div class="app-panels" id="app-panels"></div>
+    </aside>
+  </main>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
