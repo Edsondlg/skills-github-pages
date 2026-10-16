@@ -1,0 +1,53 @@
+/* Layout: consola de taller — visor 3D dominante, panel de instrumentos con pestañas a la derecha,
+   riel de línea de tiempo abajo. Grises fríos de máquina, amarillo de señal (RAL 1003) como único acento,
+   azul acero para herramental. */
+:root {
+  --bg: #e7eaee;
+  --panel: #f6f7f9;
+  --panel-2: #ffffff;
+  --line: #cdd3da;
+  --line-strong: #aab3bd;
+  --fg: #1b2026;
+  --fg-muted: #586370;
+  --accent: #f2b200;
+  --accent-ink: #1d1a10;
+  --accent-soft: #f2b20033;
+  --steel: #3c4a58;
+  --steel-soft: #3c4a5814;
+  --ok: #26915a;
+  --warn: #c98a00;
+  --fail: #cf3f35;
+  --ok-soft: #26915a1f;
+  --warn-soft: #c98a0024;
+  --fail-soft: #cf3f3524;
+  --shadow: 0 1px 2px #0f172a14, 0 4px 14px #0f172a12;
+  --font-ui: "Barlow", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-cond: "Barlow Semi Condensed", "Barlow", "Arial Narrow", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --fs-xs: 11px; --fs-sm: 12.5px; --fs-md: 14px; --fs-lg: 17px; --fs-xl: 22px;
+  --radius: 6px;
+  --gap: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111418; --panel: #181c21; --panel-2: #1e2329; --line: #2b323a; --line-strong: #3d4651;
+    --fg: #e3e7ec; --fg-muted: #98a3af; --accent: #f5c400; --accent-ink: #191609; --accent-soft: #f5c40029;
+    --steel: #a9bccf; --steel-soft: #a9bccf14; --ok: #3cb878; --warn: #e3a51c; --fail: #ec5b50;
+    --ok-soft: #3cb87824; --warn-soft: #e3a51c26; --fail-soft: #ec5b5026;
+    --shadow: 0 1px 2px #0006, 0 6px 18px #0005;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111418; --panel: #181c21; --panel-2: #1e2329; --line: #2b323a; --line-strong: #3d4651;
+  --fg: #e3e7ec; --fg-muted: #98a3af; --accent: #f5c400; --accent-ink: #191609; --accent-soft: #f5c40029;
+  --steel: #a9bccf; --steel-soft: #a9bccf14; --ok: #3cb878; --warn: #e3a51c; --fail: #ec5b50;
+  --ok-soft: #3cb87824; --warn-soft: #e3a51c26; --fail-soft: #ec5b5026;
+  --shadow: 0 1px 2px #0006, 0 6px 18px #0005;
+  color-scheme: dark;
+}
+/* Colores de zonas FLD (iguales en ambos temas; convención de software de formado). */
+:root {
+  --fld-crack: #d62728; --fld-risk: #ffbf00; --fld-safe: #2ca02c; --fld-thinning: #ff7f0e;
+  --fld-insufficient: #9e9e9e; --fld-compression: #4fc3f7; --fld-wrinkleTendency: #1e63d6; --fld-wrinkle: #7b2cbf;
+}
