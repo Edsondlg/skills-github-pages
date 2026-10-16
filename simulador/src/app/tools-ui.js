@@ -1,6 +1,6 @@
 // Lista de mediciones (3D + 2D), ficha de inspección, paleta de herramientas y atajos de teclado.
 // Las mediciones 3D vienen de MeasureTools (onMeasureChange) y las 2D del evento 'measure' de View2D;
-// los textos se rehacen desde los valores numéricos (mm) al cambiar de unidades.
+// MeasureTools re-formatea sus textos (lista y etiquetas 3D) en setFormat; los 2D se rehacen aquí desde mm.
 import * as ui from './ui-shell.js';
 
 const { $ } = ui;
@@ -14,45 +14,6 @@ function lens(f, pairs) {
   const u = s[0].match(/ (\S+)$/)?.[1];
   if (u && s.every((x) => x.endsWith(` ${u}`))) return `${pairs.map(([k], i) => `${k} ${s[i].slice(0, -u.length - 1)}`).join(' · ')} ${u}`;
   return pairs.map(([k], i) => `${k} ${s[i]}`).join(' · ');
-}
-
-const vec = (d) => `(${d.map((v) => (+v).toFixed(3)).join(', ')})`;
-
-// Texto de una medición 3D con el formateador f (mismas reglas que MeasureTools).
-function text3d(m, f) {
-  const v = m.values || {};
-  switch (m.tool) {
-    case 'point':
-      return `${f.len(v.distance)} · ${lens(f, [['Δx', v.dx], ['Δy', v.dy], ['Δz', v.dz]])}`;
-    case 'distance': {
-      const extra = v.parallel ? 'caras paralelas' : v.exact ? '' : 'entre puntos seleccionados';
-      return `${f.len(v.distance)}${extra ? ` · ${extra}` : ''}`;
-    }
-    case 'radius':
-      return `${lens(f, [['R', v.radius], ['Ø', v.diameter]])} · centro ${f.point(v.center)}`;
-    case 'area':
-      return `${f.area(v.area)} · ${v.count} ${v.count === 1 ? 'cara' : 'caras'}`;
-    case 'coords':
-      return f.point(v.point);
-    case 'thickness':
-      return `${f.len(v.thickness)}${v.exact ? '' : ' (aprox. malla)'}`;
-    case 'inspect': {
-      if (v.type === 'vertex') return f.point(v.point);
-      const out = [];
-      if (v.radius > 0) out.push(lens(f, [['R', v.radius], ['Ø', v.diameter]]));
-      if (v.semiAngleDeg != null) out.push(`Semiángulo ${f.angle(v.semiAngleDeg)}`);
-      if (v.normal) out.push(`Normal ${vec(v.normal)}`);
-      if (v.axis) out.push(`Eje ${f.point(v.axis.p)} dir ${vec(v.axis.d)}`);
-      if (v.center) out.push(`Centro ${f.point(v.center)}`);
-      if (v.arcAngle != null) out.push(`Ángulo de arco ${f.angle(v.arcAngle)}`);
-      if (v.dir) out.push(`Dirección ${vec(v.dir)}`);
-      if (v.length != null) out.push(`Longitud ${f.len(v.length)}`);
-      if (v.area != null) out.push(`Área ${f.area(v.area)}`);
-      return out.length ? out.join(' · ') : m.text;
-    }
-    default:
-      return m.text; // ángulos: no dependen de las unidades
-  }
 }
 
 // Título y texto de una cota 2D (payload del evento 'measure' de View2D, en mm).
@@ -96,7 +57,6 @@ export function initToolsUi(app) {
   const { measure, view2d } = app;
   const fmt = () => app.getState().formatter;
   let list3d = [];
-  const sys3d = new Map(); // id → sistema de unidades con el que MeasureTools escribió el texto
   let list2d = []; // [{ id: '2d-<id de View2D>', m: payload }]
   let inspect = null;
 
@@ -111,7 +71,7 @@ export function initToolsUi(app) {
   function entries() {
     const f = fmt();
     return [
-      ...list3d.map((m) => ({ id: `3d-${m.id}`, tool: m.tool, title: m.title, text: sys3d.get(m.id) === f.system ? m.text : text3d(m, f) })),
+      ...list3d.map((m) => ({ id: `3d-${m.id}`, tool: m.tool, title: m.title, text: m.text })),
       ...list2d.map((e) => ({ id: e.id, tool: 'measure2d', ...text2d(e.m, f) })),
     ];
   }
@@ -139,9 +99,6 @@ export function initToolsUi(app) {
 
   app.onMeasureChange((list, extra) => {
     list3d = list;
-    const f = fmt();
-    for (const m of list) if (!sys3d.has(m.id)) sys3d.set(m.id, f.system);
-    for (const id of sys3d.keys()) if (!list.some((m) => m.id === id)) sys3d.delete(id);
     inspect = extra.inspect || null;
     ui.setPressed($('toolPalette'), 'tool', measure.tool === 'none' ? null : measure.tool);
     render();

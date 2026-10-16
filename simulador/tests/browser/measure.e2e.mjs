@@ -178,6 +178,36 @@ try {
   eq(pinned.text.startsWith('R 12.000 · Ø 24.000 mm'), true, `texto fijado "${pinned.text}"`);
   eq(await count(), nBefore + 1, 'fijar añade a la lista');
 
+  // 8b. setFormat re-formatea lista, etiquetas del visor y ficha de inspección existentes.
+  const frames = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const pills = async () => (await frames(), await page.evaluate(() => [...document.querySelectorAll('.v3d-labels .v3d-pill')].map((p) => p.textContent).join('\n')));
+  const texts = async () => (await state()).list.map((x) => x.text).join('\n');
+  const mmPills = await pills();
+  const mmTexts = await texts();
+  eq(mmPills.includes('104.000 mm'), true, `etiqueta punto en mm "${mmPills}"`);
+  await page.evaluate(() => {
+    const f = (v) => (v / 25.4).toFixed(4);
+    window.measure.setFormat({
+      len: (v) => `${f(v)} in`,
+      area: (v) => `${(v / 645.16).toFixed(4)} in²`,
+      point: (p) => `(${p.map(f).join(', ')}) in`,
+    });
+  });
+  const inTexts = await texts();
+  const inPills = await pills();
+  for (const [where, s] of [['lista', inTexts], ['etiquetas', inPills]]) {
+    eq(s.includes('4.0945 in'), true, `${where}: punto 104 mm → 4.0945 in "${s}"`);
+    eq(s.includes('R 0.3937 · Ø 0.7874 in'), true, `${where}: radio en pulgadas "${s}"`);
+    eq(s.includes(`${((ids.topArea + ids.frontArea) / 645.16).toFixed(4)} in²`), true, `${where}: área en in² "${s}"`);
+    eq(s.includes('90.000°'), true, `${where}: ángulo sin cambios "${s}"`);
+    eq(/\bmm\b/.test(s), false, `${where}: no quedan mm "${s}"`);
+  }
+  eq((await state()).extra.inspect.lines.some((l) => l.includes(' in')), true, 'ficha de inspección en pulgadas');
+  eq((await state()).list.at(-1).text.startsWith('R 0.4724 · Ø 0.9449 in'), true, 'texto fijado en pulgadas');
+  await page.evaluate(() => window.measure.setFormat({}));
+  eq(await texts(), mmTexts, 'lista vuelve a mm');
+  eq(await pills(), mmPills, 'etiquetas vuelven a mm');
+
   await page.mouse.move(5, 790);
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await page.screenshot({ path: path.join(outDir, 'measure-tools.png') });

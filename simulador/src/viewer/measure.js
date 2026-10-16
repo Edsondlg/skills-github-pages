@@ -111,6 +111,7 @@ export class MeasureTools {
     this._pendingObjs = [];
     this._area = null;
     this._inspect = null;
+    this._inspectEnt = null; // entidad de la inspección actual (para re-formatear)
     this._msg = null;
     this._token = 0;
     this._hl = false;
@@ -138,9 +139,15 @@ export class MeasureTools {
     return this;
   }
 
-  /** Cambia el formato de las mediciones siguientes (las existentes conservan su texto). */
+  /** Cambia el formato: reescribe los textos y etiquetas existentes y la ficha de inspección. */
   setFormat(format) {
     this.format = { ...DEFAULT_FORMAT, ...(format || {}) };
+    for (const r of this._items) {
+      r.m.text = r.text();
+      this._draw(r);
+    }
+    if (this._inspect && this._inspectEnt) this._inspect = this._inspectInfo(this._inspectEnt);
+    this._emit();
   }
 
   list() {
@@ -180,9 +187,11 @@ export class MeasureTools {
   pinInspect() {
     const info = this._inspect;
     if (!info) return null;
-    const rec = this._add('inspect', info.title, info.lines.slice(1).join(' · ') || info.text, info.values, () => [
+    const ent = this._inspectEnt;
+    const cur = () => this._inspectInfo(ent);
+    const rec = this._add('inspect', info.title, () => cur().lines.slice(1).join(' · ') || cur().text, info.values, () => [
       this.viewer.createMarker(info.point),
-      this.viewer.createLabel(info.lines.slice(0, 2).join('\n'), info.point, { small: true }),
+      this.viewer.createLabel(cur().lines.slice(0, 2).join('\n'), info.point, { small: true }),
     ]);
     return { ...rec.m };
   }
@@ -206,6 +215,7 @@ export class MeasureTools {
     this._pendingObjs = [];
     this._area = null;
     this._inspect = null;
+    this._inspectEnt = null;
     this._msg = null;
   }
 
@@ -234,8 +244,9 @@ export class MeasureTools {
     objs.length = 0;
   }
 
+  // text: () => string (lee this.format al ejecutarse); build también lee this.format.
   _add(tool, title, text, values, build) {
-    const rec = { m: { id: this._nextId++, tool, title, text, values }, build, objs: [] };
+    const rec = { m: { id: this._nextId++, tool, title, text: text(), values }, text, build, objs: [] };
     this._draw(rec);
     this._items.push(rec);
     this._emit();
@@ -303,7 +314,8 @@ export class MeasureTools {
     const t = this.tool;
     if (t === 'none') return;
     if (t === 'inspect') {
-      this._inspect = r ? this._inspectInfo(this._entity(r)) : null;
+      this._inspectEnt = r ? this._entity(r) : null;
+      this._inspect = this._inspectEnt ? this._inspectInfo(this._inspectEnt) : null;
       this._msg = null;
       this._refreshHighlight();
       this._emit();
@@ -364,19 +376,17 @@ export class MeasureTools {
 
   // ---------- herramientas ----------
   _measurePoints(a, b) {
-    const F = this.format;
     const p1 = a.point;
     const p2 = b.point;
     const d = sub(p2, p1);
     const dist = len(d);
-    const deltas = this._joinLens([['Δx', d[0]], ['Δy', d[1]], ['Δz', d[2]]]);
-    this._add('point', 'Distancia entre puntos', `${F.len(dist)} · ${deltas}`,
+    const deltas = () => this._joinLens([['Δx', d[0]], ['Δy', d[1]], ['Δz', d[2]]]);
+    this._add('point', 'Distancia entre puntos', () => `${this.format.len(dist)} · ${deltas()}`,
       { distance: dist, dx: d[0], dy: d[1], dz: d[2], p1, p2 },
-      () => this._dim(p1, p2, `${F.len(dist)}\n${deltas}`));
+      () => this._dim(p1, p2, `${this.format.len(dist)}\n${deltas()}`));
   }
 
   async _measureDistance(a, b) {
-    const F = this.format;
     const ref = (e) => ({ kind: e.kind, id: e.id });
     const ra = ref(a);
     const rb = ref(b);
@@ -407,26 +417,26 @@ export class MeasureTools {
     if (parallel) values.planeDistance = Math.abs(dot(sub(b.topo.center, a.topo.center), norm(a.topo.normal)));
     const extra = parallel ? 'caras paralelas' : exact ? '' : 'entre puntos seleccionados';
     this._add('distance', exact ? 'Distancia mínima' : 'Distancia entre puntos seleccionados',
-      `${F.len(d)}${extra ? ` · ${extra}` : ''}`, values,
-      () => this._dim(p1, p2, `${F.len(d)}${extra ? `\n${extra}` : ''}`));
+      () => `${this.format.len(d)}${extra ? ` · ${extra}` : ''}`, values,
+      () => this._dim(p1, p2, `${this.format.len(d)}${extra ? `\n${extra}` : ''}`));
   }
 
   _measureAngle(a, b) {
-    const F = this.format;
     const fa = a.kind === 'face';
     const fb = b.kind === 'face';
     let title;
     let values;
     let label;
     let text;
+    const F = { angle: (v) => this.format.angle(v) };
     if (fa && fb) {
       // Normales exteriores: ángulo interior = 180° − ángulo entre normales.
       const phi = acosD(dot(norm(a.topo.normal), norm(b.topo.normal)));
       const interior = 180 - phi;
       title = 'Ángulo entre caras';
       values = { angle: interior, supplement: phi };
-      label = `${F.angle(interior)}\nsupl. ${F.angle(phi)}`;
-      text = `${F.angle(interior)} (suplementario ${F.angle(phi)})`;
+      label = () => `${F.angle(interior)}\nsupl. ${F.angle(phi)}`;
+      text = () => `${F.angle(interior)} (suplementario ${F.angle(phi)})`;
     } else if (!fa && !fb) {
       let d1 = lineDir(a.topo);
       let d2 = lineDir(b.topo);
@@ -446,20 +456,20 @@ export class MeasureTools {
       const acute = Math.min(beta, 180 - beta);
       title = 'Ángulo entre aristas';
       values = { angle: acute, angle180: beta };
-      label = `${F.angle(acute)}\n0–180°: ${F.angle(beta)}`;
-      text = `${F.angle(acute)} (0–180°: ${F.angle(beta)})`;
+      label = () => `${F.angle(acute)}\n0–180°: ${F.angle(beta)}`;
+      text = () => `${F.angle(acute)} (0–180°: ${F.angle(beta)})`;
     } else {
       const f = fa ? a : b;
       const e = fa ? b : a;
       const ang = deg(Math.asin(Math.min(1, Math.abs(dot(norm(f.topo.normal), lineDir(e.topo))))));
       title = 'Ángulo entre arista y cara';
       values = { angle: ang };
-      label = F.angle(ang);
+      label = () => F.angle(ang);
       text = label;
     }
     values.a = { kind: a.kind, id: a.id };
     values.b = { kind: b.kind, id: b.id };
-    this._add('angle', title, text, values, () => this._dim(a.point, b.point, label, { dashed: true }));
+    this._add('angle', title, text, values, () => this._dim(a.point, b.point, label(), { dashed: true }));
   }
 
   _measureRadius(e) {
@@ -489,34 +499,32 @@ export class MeasureTools {
       axis = t.axis || null;
       center = t.axis ? onAxis(p, t.axis) : t.center;
     }
-    const F = this.format;
-    const rd = this._joinLens([['R', R], ['Ø', 2 * R]]);
-    this._add('radius', `Radio (${name})`, `${rd} · centro ${F.point(center)}`,
+    const rd = () => this._joinLens([['R', R], ['Ø', 2 * R]]);
+    this._add('radius', `Radio (${name})`, () => `${rd()} · centro ${this.format.point(center)}`,
       { radius: R, diameter: 2 * R, center, axis, point: p, type: t.type, entity: { kind: e.kind, id: e.id } },
       () => {
         const v = this.viewer;
         return [
           v.createLine([...center, ...p], { width: 1.5, dashed: true }),
           v.createMarker([...center, ...p]),
-          v.createLabel(rd, p),
+          v.createLabel(rd(), p),
         ];
       });
   }
 
   _measureArea(e, accumulate) {
-    const F = this.format;
     const sum = (v) => {
       v.area = v.faces.reduce((s, id) => s + (this.viewer.getFace(id)?.area || 0), 0);
       v.count = v.faces.length;
-      return `${F.area(v.area)} · ${v.count} ${v.count === 1 ? 'cara' : 'caras'}`;
     };
+    const txt = (v) => () => `${this.format.area(v.area)} · ${v.count} ${v.count === 1 ? 'cara' : 'caras'}`;
     const rec = accumulate ? this._area : null;
     if (!rec) {
       const st = { labelAt: e.point };
       const values = { area: 0, count: 0, faces: [e.id] };
-      const text = sum(values);
-      this._area = this._add('area', 'Área', text, values, () => [
-        this.viewer.createLabel(`${F.area(values.area)}${values.count > 1 ? `\n${values.count} caras` : ''}`, st.labelAt),
+      sum(values);
+      this._area = this._add('area', 'Área', txt(values), values, () => [
+        this.viewer.createLabel(`${this.format.area(values.area)}${values.count > 1 ? `\n${values.count} caras` : ''}`, st.labelAt),
       ]);
       this._area.st = st;
       this._refreshHighlight();
@@ -532,7 +540,8 @@ export class MeasureTools {
       return;
     }
     rec.st.labelAt = e.point;
-    rec.m.text = sum(v);
+    sum(v);
+    rec.m.text = rec.text();
     this._draw(rec);
     this._refreshHighlight();
     this._emit();
@@ -540,15 +549,14 @@ export class MeasureTools {
 
   _measureCoords(e) {
     const p = e.point;
-    const xyz = this._joinLens([['X', p[0]], ['Y', p[1]], ['Z', p[2]]]);
-    this._add('coords', 'Coordenadas', this.format.point(p), { point: p, x: p[0], y: p[1], z: p[2] },
-      () => [this.viewer.createMarker(p), this.viewer.createLabel(xyz, p)]);
+    const xyz = () => this._joinLens([['X', p[0]], ['Y', p[1]], ['Z', p[2]]]);
+    this._add('coords', 'Coordenadas', () => this.format.point(p), { point: p, x: p[0], y: p[1], z: p[2] },
+      () => [this.viewer.createMarker(p), this.viewer.createLabel(xyz(), p)]);
   }
 
   // Espesor de pared en el punto: material justo bajo la cara, en dirección −normal.
   _measureThickness(e) {
     const v = this.viewer;
-    const F = this.format;
     const p = e.point;
     const n = norm(e.normal || e.topo?.normal || [0, 0, 1]);
     const R = v.getModelRadius();
@@ -592,9 +600,9 @@ export class MeasureTools {
       }
     }
     const exact = method !== 'malla';
-    this._add('thickness', 'Espesor de pared', `${F.len(t)}${exact ? '' : ' (aprox. malla)'}`,
+    this._add('thickness', 'Espesor de pared', () => `${this.format.len(t)}${exact ? '' : ' (aprox. malla)'}`,
       { thickness: t, p1: p, p2, exact, method, faces: [e.id, hit.faceId] },
-      () => this._dim(p, p2, `Espesor ${F.len(t)}${exact ? '' : ' ≈'}`));
+      () => this._dim(p, p2, `Espesor ${this.format.len(t)}${exact ? '' : ' ≈'}`));
   }
 
   // ---------- inspección ----------

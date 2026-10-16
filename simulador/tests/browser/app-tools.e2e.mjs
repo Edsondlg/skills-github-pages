@@ -97,7 +97,19 @@ try {
   assert.ok(r[2].text.includes(`${(p2.d / 25.4).toFixed(4)} in`), `2D en pulgadas «${r[2].text}»`);
   assert.ok(r.every((x) => !/ mm\b/.test(x.text)), 'quedan textos en mm');
   await page.locator('#measurePanel').screenshot({ path: path.join(outDir, 'app-tools-measures.png') });
+  // La etiqueta 3D del visor (CSS2D) también cambia de unidades (se pinta solo con la pestaña 3D visible).
+  const pillText = async () => {
+    await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res))));
+    return page.evaluate(() => [...document.querySelectorAll('.v3d-labels .v3d-pill')].map((p) => p.textContent).join('\n'));
+  };
+  const dIn = `${(v.d / 25.4).toFixed(4)} in`;
+  await page.click('#viewTabs [data-tab="3d"]');
+  let pt = await pillText();
+  assert.ok(pt.includes(dIn), `etiqueta 3D en pulgadas «${pt}»`);
   await page.click('#unitsSeg [data-value="mm"]');
+  pt = await pillText();
+  assert.ok(pt.includes(`${v.d.toFixed(3)} mm`) && !pt.includes(dIn), `etiqueta 3D vuelve a mm «${pt}»`);
+  await page.click('#viewTabs [data-tab="2d"]');
   r = await rows();
   assert.ok(r[0].text.includes(`${v.d.toFixed(3)} mm`), 'vuelta a mm');
 
