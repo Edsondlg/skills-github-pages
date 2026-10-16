@@ -1057,7 +1057,18 @@ export class Viewer3D {
     this._raycaster.set(v3(origin), v3(dir).normalize());
     this._raycaster.near = 0;
     this._raycaster.far = Infinity;
-    return this._raycaster.intersectObject(this._model.mesh, false).map((h) => ({
+    // Ambas caras: el material es de una sola cara y three omitiría las caras vistas por dentro.
+    const mesh = this._model.mesh;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const sides = mats.map((m) => m.side);
+    mats.forEach((m) => { m.side = THREE.DoubleSide; });
+    let hits;
+    try {
+      hits = this._raycaster.intersectObject(mesh, false);
+    } finally {
+      mats.forEach((m, i) => { m.side = sides[i]; });
+    }
+    return hits.map((h) => ({
       distance: h.distance,
       point: arr(h.point),
       normal: arr(h.face.normal),

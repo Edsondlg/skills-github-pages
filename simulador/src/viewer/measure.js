@@ -548,7 +548,7 @@ export class MeasureTools {
     const n = norm(e.normal || e.topo?.normal || [0, 0, 1]);
     const R = v.getModelRadius();
     // Rayo desde fuera del modelo hacia la cara: el último impacto antes de p es la cara
-    // opuesta (raycastModel solo devuelve caras frontales; ver informe).
+    // opuesta más cercana (la pared detrás del punto).
     const L = 4 * R + 1;
     const origin = sub(p, mul(n, L));
     const selfTol = R * 1e-2;
