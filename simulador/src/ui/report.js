@@ -5,7 +5,7 @@ const MM_PER_IN = 25.4;
 const G_PER_LB = 453.59237;
 const G_PER_OZ = G_PER_LB / 16;
 const LB_IN3_PER_G_CM3 = 0.036127292; // 1 g/cm³ en lb/in³
-const LB_IN2_PER_KG_MM2 = 3.41717; // 1 kg·mm² en lb·in²
+const LB_IN2_PER_KG_MM2 = 2.20462262185 / MM_PER_IN ** 2; // 1 kg·mm² = 2.20462 lb·(1/25.4 in)² ≈ 0.00341717 lb·in²
 const N_PER_TONF = 9806.65;
 const N_PER_USTON = 8896.44;
 const N_PER_LBF = 4.4482216;
@@ -28,8 +28,10 @@ const STRIP_FACTOR = 0.1; // fuerza de extracción ≈ 10 % de la de corte (esti
  * @property {?Object} sheet        lámina/troquelado (sólo extrude con perfil):
  *   thickness, blankWidth, blankHeight, blankArea, netArea, utilization (%), cutLength, holes, minHoleDiameter,
  *   shearStrength (MPa|null), cuttingForce {N,kN,tonf,uston}|null, strippingForce (igual, estimación 10 %)|null,
- *   grossWeight {g,kg}, netWeight {g,kg}, scrapWeight {g,kg}, scrapPct
- * @property {?Object} profile      perfil 2D: netArea, perimeterOuter, perimeterInner, loops, holes[{d,c}], bbox2d
+ *   grossWeight {g,kg}, netWeight {g,kg} (= masa del kernel), scrapWeight {g,kg}, scrapPct.
+ *   holes y minHoleDiameter cuentan solo agujeros pasantes (los ciegos no se punzonan).
+ * @property {?string} sheetNote    por qué no hay datos de lámina (sheetApplicable = false)
+ * @property {?Object} profile     perfil 2D: netArea, perimeterOuter, perimeterInner, loops, holes[{d,c}], bbox2d
  * @property {?{kernelVolume:number,analyticVolume:number,absError:number,relError:number,relErrorPct:number}} precision
  * @property {?{pricePerKg:number,netCost:number,blankCost:?number}} cost
  * @property {{counts:Object,valid:boolean,closed:boolean}} topology
@@ -37,8 +39,12 @@ const STRIP_FACTOR = 0.1; // fuerza de extracción ≈ 10 % de la de corte (esti
 
 const kgmm2To = (v) => ({ kgmm2: v, kgm2: v * 1e-6, lbin2: v * LB_IN2_PER_KG_MM2 });
 
-/** Calcula todos los datos de la pieza a partir del resultado del kernel. */
-export function computePartData({ build, material, profile = null, mode, thickness, pricePerKg, blankMargin = 0, analyticVolume }) {
+/**
+ * Calcula todos los datos de la pieza a partir del resultado del kernel.
+ * sheetApplicable = false (p. ej. regiones con alturas distintas) suprime los datos de lámina y deja sheetNote.
+ * blankMargin negativo o inválido cuenta como 0.
+ */
+export function computePartData({ build, material, profile = null, mode, thickness, pricePerKg, blankMargin = 0, analyticVolume, sheetApplicable = true }) {
   const p = build.props;
   const rho = material.density;
   const massG = (p.volume / 1000) * rho;
@@ -78,17 +84,21 @@ export function computePartData({ build, material, profile = null, mode, thickne
     },
     gyration: { x: kg(I.Ixx), y: kg(I.Iyy), z: kg(I.Izz), principal: mom.map(kg) },
     sheet: null,
+    sheetNote: null,
     profile: profile ? { ...profile } : null,
     precision: null,
     cost: null,
     topology: { counts: p.counts ?? {}, valid: !!p.valid, closed: !!p.closed },
   };
 
-  if (mode === 'extrude' && profile && thickness > 0) {
+  if (mode === 'extrude' && profile && thickness > 0 && !sheetApplicable) {
+    d.sheetNote = 'Datos de lámina no aplican: hay regiones con alturas distintas.';
+  } else if (mode === 'extrude' && profile && thickness > 0) {
     const t = thickness;
     const b = profile.bbox2d;
-    const blankWidth = b.maxX - b.minX + 2 * blankMargin;
-    const blankHeight = b.maxY - b.minY + 2 * blankMargin;
+    const margin = Math.max(0, Number(blankMargin) || 0);
+    const blankWidth = b.maxX - b.minX + 2 * margin;
+    const blankHeight = b.maxY - b.minY + 2 * margin;
     const blankArea = blankWidth * blankHeight;
     const cutLength = (profile.perimeterOuter ?? 0) + (profile.perimeterInner ?? 0);
     const tau = material.shear ?? (material.uts != null ? 0.8 * material.uts : null);
@@ -96,9 +106,11 @@ export function computePartData({ build, material, profile = null, mode, thickne
     const force = (n) => ({ N: n, kN: n / 1000, tonf: n / N_PER_TONF, uston: n / N_PER_USTON });
     const wt = (area) => { const g = (area * t * rho) / 1000; return { g, kg: g / 1000 }; };
     const gross = wt(blankArea);
-    const net = wt(profile.netArea);
+    // Peso neto = masa real del kernel (incluye agujeros ciegos y demás detalles 3D).
+    const net = { g: massG, kg: massKg };
     const scrapG = gross.g - net.g;
-    const holes = profile.holes ?? [];
+    // Solo pasantes; op ausente = pasante (perfiles sin op).
+    const holes = (profile.holes ?? []).filter((h) => h.op == null || h.op === 'through');
     d.sheet = {
       thickness: t, blankWidth, blankHeight, blankArea,
       netArea: profile.netArea,
@@ -289,6 +301,8 @@ function buildSections(d, f) {
       R('Merma', num(s.scrapPct), '%', f.pct(s.scrapPct)),
     );
     sections.push({ title: 'Lámina / troquelado', rows });
+  } else if (d.sheetNote) {
+    sections.push({ title: 'Lámina / troquelado', rows: [R('Nota', d.sheetNote, '', d.sheetNote)] });
   }
   const pr = d.profile;
   if (pr) {
@@ -338,8 +352,12 @@ function buildSections(d, f) {
 
 // ---------- CSV / JSON ----------
 
+// Celdas numéricas (o listas «x; y; z») que nunca se alteran.
+const NUMERIC_CELL = /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?(; [-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?)*$/i;
 const csvCell = (v) => {
-  const s = v == null ? '' : String(v);
+  let s = v == null ? '' : String(v);
+  // Inyección de fórmulas: texto que empieza con = @ + - (o tab/CR) se antepone con «'».
+  if (/^[=@+\-\t\r]/.test(s) && !NUMERIC_CELL.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
@@ -391,7 +409,7 @@ export function reportHTML(partData, { fileName = '', imageDataURL = '', measure
   let body = '';
   for (const sec of buildSections(partData, f)) {
     body += table(sec.title, sec.rows);
-    if (sec.title === 'Lámina / troquelado') {
+    if (sec.title === 'Lámina / troquelado' && partData.sheet) {
       body += '<p class="note">La fuerza de extracción es una estimación (≈ 10 % de la fuerza de corte). Valores de material típicos, no certificados.</p>';
     }
     if (sec.title === 'Perfil 2D') {

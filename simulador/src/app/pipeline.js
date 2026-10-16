@@ -118,8 +118,10 @@ export function importImage(imageData, opts = {}) {
  * @property {Loop[]} loops
  * @property {Object[]} loopInfos loopInfo de cada contorno (área, perímetro, centroide, bbox, circle, poly)
  * @property {Loop[]} open        cadenas abiertas (no se usan en 3D)
- * @property {Array<{outer:number,holes:number[]}>} regions   índices en loops
- * @property {Object[]} nodes     árbol de anidamiento de buildRegions
+ * @property {Array<{outer:number,holes:number[]}>} regions   índices en loops (sin los contornos del marco)
+ * @property {Object[]} nodes     árbol de anidamiento de buildRegions; nodes[i] ↔ loops[i]. Los contornos del marco
+ *                                no participan: { parent: -1, depth: 0, children: [], frame: true }
+ * @property {number[]} frameLoops  índices en loops del marco del plano excluido (vacío si no hay)
  * @property {Array<{p0:number[],p1:number[],length:number}>} axisLines  líneas de eje/trazos (mm), de mayor a menor
  * @property {Object} stats       { segmentsIn, segmentsUsed, hiddenRemoved, dashedRemoved, duplicatesRemoved,
  *                                  zeroLengthRemoved, loops, regions, holes, openChains }
@@ -138,9 +140,14 @@ export function importImage(imageData, opts = {}) {
  * @param {string[]} [o.hiddenLayers=[]]
  * @param {number} [o.tol=0.01]       mm
  * @param {number} [o.chordTol=0.01]  mm (teselado de loopInfo/buildRegions)
+ * @param {boolean} [o.detectFrame=true]  detectar el marco del plano (ver detectFrameLoops) y sacarlo de las regiones
+ * @param {?number[]} [o.frameLoops=null]  índices en loops del marco elegidos por el usuario (posiblemente vacío);
+ *   si se da, sustituye a la detección. Los índices son estables para el mismo dibujo y las mismas opciones.
+ * Los contornos del marco siguen en loops/loopInfos (para dibujarlos) con sus índices originales; las regiones se
+ * calculan sin ellos y sus índices outer/holes apuntan a loops.
  * @returns {Profile}
  */
-export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = true, hiddenLayers = [], tol = 0.01, chordTol = 0.01 } = {}) {
+export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = true, hiddenLayers = [], tol = 0.01, chordTol = 0.01, detectFrame = true, frameLoops = null } = {}) {
   let toMM;
   if (unitOverride == null || unitOverride === 'auto') toMM = drawing.units.toMM;
   else if (typeof unitOverride === 'number' && unitOverride > 0) toMM = unitOverride;
@@ -155,8 +162,8 @@ export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = 
   let hiddenRemoved = 0, dashedRemoved = 0;
   for (const s of drawing.segments) {
     const layer = s.meta?.layer, dashed = !!s.meta?.dashed;
-    // Candidatos a eje: líneas de trazos de capas no congeladas/apagadas, aunque se filtren después.
-    if (dashed && s.type === 'line' && !off.has(layer)) {
+    // Candidatos a eje: líneas de trazos de capas visibles, aunque se filtren después por ser trazos.
+    if (dashed && s.type === 'line' && !hidden.has(layer)) {
       const t = scale(s);
       axisLines.push({ p0: t.p0, p1: t.p1, length: segLength(t) });
     }
@@ -168,13 +175,19 @@ export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = 
 
   const L = buildLoops(segments, { tol });
   const loopInfos = L.loops.map((l) => loopInfo(l, chordTol));
-  const { nodes, regions } = buildRegions(L.loops, { chordTol });
-  const holes = regions.reduce((n, r) => n + r.holes.length, 0);
   const warnings = [];
+  let frame;
+  if (Array.isArray(frameLoops)) frame = [...new Set(frameLoops)].filter((i) => Number.isInteger(i) && i >= 0 && i < L.loops.length).sort((a, b) => a - b);
+  else if (detectFrame) {
+    frame = detectFrameLoops(L.loops, loopInfos, buildRegions(L.loops, { chordTol }).nodes, tol);
+    if (frame.length) warnings.push('Se detectó el marco del plano y se excluyó del modelo (haz clic en él para incluirlo).');
+  } else frame = [];
+  const { nodes, regions } = regionsWithout(L.loops, frame, chordTol);
+  const holes = regions.reduce((n, r) => n + r.holes.length, 0);
   if (!L.loops.length) warnings.push('No se encontraron contornos cerrados en el plano.');
   if (L.open.length) warnings.push(`${L.open.length} cadena(s) abierta(s) no forman contorno y no se usarán en 3D.`);
   return {
-    toMM, tol, segments, loops: L.loops, loopInfos, open: L.open, regions, nodes, axisLines,
+    toMM, tol, segments, loops: L.loops, loopInfos, open: L.open, regions, nodes, frameLoops: frame, axisLines,
     stats: {
       segmentsIn: drawing.segments.length, segmentsUsed: segments.length, hiddenRemoved, dashedRemoved,
       duplicatesRemoved: L.stats.duplicatesRemoved, zeroLengthRemoved: L.stats.zeroLengthRemoved,
@@ -193,12 +206,56 @@ function isAxisRect(loop, info) {
   return boxArea > 0 && Math.abs(info.area - boxArea) <= 1e-6 * boxArea;
 }
 
+// Dos círculos concéntricos (mismo centro dentro de tol).
+function concentricCircles(a, b, tol) {
+  return !!(a.circle && b.circle) && Math.hypot(a.circle.c[0] - b.circle.c[0], a.circle.c[1] - b.circle.c[1]) <= tol;
+}
+
+/**
+ * Marco del plano (índices en loops) sobre el anidamiento completo; [] si no hay. Candidatos: rectángulos
+ * alineados de profundidad 0, el mayor primero.
+ * - Borde doble: R con un único agujero H rectangular alineado, metido en los cuatro lados > 0 y
+ *   ≤ max(20 mm, 8 % del lado menor de R), y H contiene ≥ 1 isla → [R, H].
+ * - Línea sencilla: R con algún agujero que contiene una isla, sin ser el par (agujero, isla) dos círculos
+ *   concéntricos (avellanado/rosca) → [R].
+ */
+function detectFrameLoops(loops, infos, nodes, tol) {
+  const cands = nodes.map((_, i) => i).filter((i) => nodes[i].parent === -1 && isAxisRect(loops[i], infos[i]))
+    .sort((a, b) => infos[b].area - infos[a].area);
+  for (const r of cands) {
+    const kids = nodes[r].children, R = infos[r].bbox;
+    if (kids.length === 1 && nodes[kids[0]].children.length >= 1 && isAxisRect(loops[kids[0]], infos[kids[0]])) {
+      const H = infos[kids[0]].bbox;
+      const lim = Math.max(20, 0.08 * Math.min(R.maxX - R.minX, R.maxY - R.minY));
+      const inset = [H.minX - R.minX, H.minY - R.minY, R.maxX - H.maxX, R.maxY - H.maxY];
+      if (inset.every((d) => d > 0 && d <= lim)) return [r, kids[0]].sort((a, b) => a - b);
+    }
+    if (kids.some((h) => nodes[h].children.some((isl) => !concentricCircles(infos[h], infos[isl], tol)))) return [r];
+  }
+  return [];
+}
+
+// buildRegions sin los contornos excluidos, con los índices remapeados a loops.
+function regionsWithout(loops, excluded, chordTol) {
+  if (!excluded.length) return buildRegions(loops, { chordTol });
+  const ex = new Set(excluded);
+  const keep = loops.map((_, i) => i).filter((i) => !ex.has(i));
+  const sub = buildRegions(keep.map((i) => loops[i]), { chordTol });
+  const nodes = loops.map((loop) => ({ loop, parent: -1, depth: 0, children: [], frame: true }));
+  sub.nodes.forEach((n, j) => {
+    nodes[keep[j]] = { loop: n.loop, parent: n.parent < 0 ? -1 : keep[n.parent], depth: n.depth, children: n.children.map((c) => keep[c]) };
+  });
+  const regions = sub.regions.map((r) => ({ outer: keep[r.outer], holes: r.holes.map((h) => keep[h]) }));
+  return { nodes, regions };
+}
+
 /**
  * Estado de operación por defecto (lo edita la UI y lo consume makeJob).
  * - regions[i] ↔ profile.regions[i]; holes[k] ↔ profile.regions[i].holes[k].
  *   height/z0/depth null = por defecto (espesor general / 0 / mitad de la altura para ciegos).
- * - Marco: una región cuyo exterior es un rectángulo alineado y cuyos agujeros contienen ≥ 2 exteriores
- *   de otras regiones (borde doble de un plano) se excluye y se avisa en `warnings`.
+ * - El marco del plano ya viene fuera de profile.regions (prepareProfile).
+ * - Una isla circular concéntrica con su agujero circular (convención de avellanado o rosca) se excluye
+ *   y se avisa en `warnings`.
  * - Eje de revolución: la línea de trazos más larga del dibujo (axisKind 'x'/'y' si coincide con un eje
  *   coordenado), o el eje X si no hay ninguna.
  * @param {Profile} profile
@@ -206,12 +263,15 @@ function isAxisRect(loop, info) {
  */
 export function defaultOpState(profile) {
   const warnings = [];
+  const tol = profile.tol ?? 0.01;
+  let concentric = 0;
   const regions = profile.regions.map((r) => {
-    const contained = r.holes.reduce((n, h) => n + profile.nodes[h].children.length, 0);
-    const frame = contained >= 2 && isAxisRect(profile.loops[r.outer], profile.loopInfos[r.outer]);
-    return { included: !frame, height: null, z0: null, holes: r.holes.map(() => ({ op: 'through', depth: null })) };
+    const parent = profile.nodes[r.outer].parent;
+    const skip = parent >= 0 && concentricCircles(profile.loopInfos[parent], profile.loopInfos[r.outer], tol);
+    if (skip) concentric++;
+    return { included: !skip, height: null, z0: null, holes: r.holes.map(() => ({ op: 'through', depth: null })) };
   });
-  if (regions.some((r) => !r.included)) warnings.push('Se excluyó un posible marco del plano');
+  if (concentric) warnings.push(`Se ignoraron ${concentric} círculos concéntricos dentro de agujeros (avellanados o roscas)`);
 
   let revolve = { axisKind: 'x', axis: { p: [0, 0], d: [1, 0] }, angleDeg: 360 };
   const a = profile.axisLines?.[0];
@@ -253,6 +313,28 @@ const holeState = (rs, k) => rs.holes?.[k] ?? { op: 'through', depth: null };
 const regionHeight = (op, rs) => rs.height ?? op.thickness;
 // Profundidad de un agujero ciego; por defecto la mitad de la altura.
 const blindDepth = (hs, h) => hs.depth ?? h / 2;
+// Rango en z de una región extruida [z0, z0 + h] (mismo criterio que el kernel).
+const zRange = (op, rs) => { const h = regionHeight(op, rs), z0 = rs.z0 ?? (op.symmetric ? -h / 2 : 0); return [z0, z0 + h]; };
+
+/**
+ * absorber[i] = índice de la región incluida cuyo agujero 'none' (material macizo) contiene a la región i
+ * (a cualquier nivel), o -1. Esas regiones quedan dentro del sólido: el kernel las fusiona sin cambio,
+ * así que no cuentan en el resumen 2D ni en el volumen analítico.
+ */
+function absorbers(profile, op) {
+  const byOuter = new Map(profile.regions.map((r, i) => [r.outer, i]));
+  return profile.regions.map((r) => {
+    let hole = profile.nodes[r.outer].parent;
+    while (hole >= 0) {
+      const j = byOuter.get(profile.nodes[hole].parent);
+      if (j == null) return -1;
+      const rs = regionState(op, j);
+      if (rs.included !== false && holeState(rs, profile.regions[j].holes.indexOf(hole)).op === 'none') return j;
+      hole = profile.nodes[profile.regions[j].outer].parent;
+    }
+    return -1;
+  });
+}
 
 function revolveAxis(rv) {
   if (rv.axisKind === 'y') return { p: [0, 0], d: [0, 1] };
@@ -338,7 +420,8 @@ export function makeJob(profile, op, { meshQuality = 'normal' } = {}) {
  * Cómo cuentan los agujeros:
  * - 'through': se restan de netArea, su perímetro suma a perimeterInner (longitud de corte) y se listan.
  * - 'blind': no se restan ni suman corte (no atraviesan la lámina), pero se listan con op 'blind'.
- * - 'none': se ignoran por completo (no son agujeros).
+ * - 'none': se ignoran por completo (no son agujeros); las regiones dentro de un agujero 'none' quedan en
+ *   material macizo y tampoco cuentan.
  * @returns {{netArea:number, perimeterOuter:number, perimeterInner:number, loops:number,
  *   holes:Array<{d:?number,c:number[],area:number,perimeter:number,op:string}>, bbox2d:?Object}}
  */
@@ -346,9 +429,10 @@ export function profileSummary(profile, op) {
   let netArea = 0, perimeterOuter = 0, perimeterInner = 0, loops = 0;
   const holes = [];
   let bbox2d = null;
+  const abs = absorbers(profile, op);
   profile.regions.forEach((r, i) => {
     const rs = regionState(op, i);
-    if (rs.included === false) return;
+    if (rs.included === false || abs[i] >= 0) return;
     const oi = profile.loopInfos[r.outer];
     netArea += oi.area;
     perimeterOuter += oi.perimeter;
@@ -377,11 +461,22 @@ export function profileSummary(profile, op) {
  * o revolución con regiones a ambos lados del eje).
  * Extrusión: Σ (A_ext − Σ A_pasantes − Σ A_ciegos·(prof/h))·h por región (prof ≥ h cuenta como pasante;
  * 'none' no se resta). Revolución (Pappus): θ·Σ A·r̄ (exterior menos agujeros no 'none').
+ * Las regiones dentro de un agujero 'none' no suman (ya son material); en extrusión, si sobresalen en z de la
+ * región que las contiene, el volumen no es deducible (null).
  * @returns {?number} mm³
  */
 export function analyticVolume(profile, op) {
-  const inc = profile.regions.map((r, i) => ({ r, rs: regionState(op, i) })).filter((x) => x.rs.included !== false);
-  if (!inc.length) return null;
+  const abs = absorbers(profile, op);
+  const all = profile.regions.map((r, i) => ({ r, i, rs: regionState(op, i) })).filter((x) => x.rs.included !== false);
+  if (!all.length) return null;
+  if (op.mode === 'extrude') {
+    for (const { i, rs } of all) {
+      if (abs[i] < 0) continue;
+      const [a, b] = zRange(op, rs), [A, B] = zRange(op, regionState(op, abs[i]));
+      if (a < A || b > B) return null;
+    }
+  }
+  const inc = all.filter((x) => abs[x.i] < 0);
   const info = (i) => profile.loopInfos[i];
   if (op.mode === 'extrude') {
     const f = op.fillets || {};
@@ -421,15 +516,27 @@ export function analyticVolume(profile, op) {
 
 /**
  * Datos completos de la pieza: computePartData con profileSummary, analyticVolume y espesor.
+ * Sin datos de lámina (sheet null + sheetNote) si alguna región incluida tiene altura o z0 distintos del espesor
+ * general: la pieza ya no es una lámina de espesor uniforme.
  * @param {{build:Object, profile:Profile, op:Object, material:Object, pricePerKg?:number, blankMargin?:number}} a
  * @returns {Object} PartData (ver ui/report.js)
  */
 export function computeAll({ build, profile, op, material, pricePerKg, blankMargin = 0 }) {
+  let sheetApplicable = true;
+  if (op.mode === 'extrude') {
+    const [A, B] = zRange(op, {});
+    sheetApplicable = profile.regions.every((_, i) => {
+      const rs = regionState(op, i);
+      if (rs.included === false) return true;
+      const [a, b] = zRange(op, rs);
+      return Math.abs(a - A) <= 1e-9 && Math.abs(b - B) <= 1e-9;
+    });
+  }
   return computePartData({
     build, material, mode: op.mode,
     profile: profileSummary(profile, op),
     thickness: op.mode === 'extrude' ? op.thickness : undefined,
-    pricePerKg, blankMargin,
+    pricePerKg, blankMargin, sheetApplicable,
     analyticVolume: analyticVolume(profile, op) ?? undefined,
   });
 }
