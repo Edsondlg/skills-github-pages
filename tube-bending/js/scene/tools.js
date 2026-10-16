@@ -206,6 +206,9 @@ export function buildTools({ OD, plan, layout: L, materials: M }) {
   const md = plan?.mandrel || { type: 'none' };
   const mType = md.type || 'none';
   const mand = { type: mType, balls: [], links: [], shank: null, rod: null };
+  // Shank + balls + links: hidden while the tube is being lowered in (`load`, loadOffsetY > 0).
+  const mandrelHead = new THREE.Group(); mandrelHead.name = 'mandrelHead';
+  mandrel.add(mandrelHead);
   if (mType !== 'none') {
     const dia = num(md.diameter, OD * 0.85);
     const shankL = num(md.shankLength, 2.5 * OD);
@@ -216,7 +219,7 @@ export function buildTools({ OD, plan, layout: L, materials: M }) {
     for (let i = 0; i < prof.length - 1; i++) parts.push(new THREE.LatheGeometry([prof[i], prof[i + 1]], 48));
     const sg = mergeGeometries(parts); sg.rotateZ(-Math.PI / 2); // lathe Y → +X (nose at x = 0, body toward −X)
     shank.add(mesh(sg, M.mandrelChrome, { name: 'mandrelShank' }));
-    mandrel.add(shank); mand.shank = shank;
+    mandrelHead.add(shank); mand.shank = shank;
     if (mType === 'ball') {
       const n = Math.max(0, Math.round(md.balls ?? 3));
       const pitch = num(md.pitch, 0.6 * OD), bw = Math.min(num(md.ballWidth, 0.45 * OD), dia);
@@ -230,9 +233,9 @@ export function buildTools({ OD, plan, layout: L, materials: M }) {
       const lg = new THREE.CylinderGeometry(lr, lr, 1, 16).rotateZ(Math.PI / 2);
       for (let k = 0; k < n; k++) {
         const b = mesh(bg, M.mandrelChrome, { name: `mandrelBall${k}` });
-        mandrel.add(b); mand.balls.push(b);
+        mandrelHead.add(b); mand.balls.push(b);
         const link = mesh(lg, M.mandrelBronze, { name: `mandrelLink${k}` });
-        mandrel.add(link); mand.links.push(link);
+        mandrelHead.add(link); mand.links.push(link);
       }
       mand.pitch = pitch; mand.bw = bw;
     }
@@ -271,6 +274,7 @@ export function buildTools({ OD, plan, layout: L, materials: M }) {
     clampRod.scale.set(1, 1, rodLen);
     pdOpen.position.z = (tools.pressureDieOpen ?? 0) * L.pdOpenStroke;
     pdTravel.position.x = tools.pressureDieTravel || 0;
+    mandrelHead.visible = !((tools.loadOffsetY || 0) > 0);
     if (mand.type !== 'none') {
       const nose = mand.nose0 + (tools.mandrelOffset || 0);
       mand.shank.position.set(nose, 0, 0);

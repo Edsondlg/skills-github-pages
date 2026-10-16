@@ -16,7 +16,7 @@ export async function createViewer(container, { quality = 'high' } = {}) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, high ? 2 : 1.25));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 0.9;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.localClippingEnabled = true;
@@ -56,7 +56,7 @@ export async function createViewer(container, { quality = 'high' } = {}) {
   const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
   const world = new THREE.Group(); scene.add(world);
   const labelGroup = new THREE.Group(); scene.add(labelGroup);
-  let floor = null, machine = null, tools = null, layout = null, OD = 50;
+  let floor = null, contact = null, machine = null, tools = null, layout = null, OD = 50;
   const tube = new TubeMesh(M);
   world.add(tube.group);
   const visState = {};
@@ -68,7 +68,7 @@ export async function createViewer(container, { quality = 'high' } = {}) {
     groups.machine = [...(machine?.vis.machine || []), ...(tools?.vis.machine || [])];
     groups.collet = machine?.vis.collet || [];
     groups.tube = [tube.group];
-    groups.floor = floor ? [floor] : [];
+    groups.floor = floor ? [floor, contact] : [];
     for (const [g, objs] of Object.entries(groups)) for (const o of objs) o.visible = visState[g] !== false;
     labelRenderer.domElement.style.display = visState.labels === false ? 'none' : '';
     needsRender = true;
@@ -97,9 +97,11 @@ export async function createViewer(container, { quality = 'high' } = {}) {
   function fitLights() {
     const b = sceneBox(), c = b.getCenter(new THREE.Vector3()), r = b.getSize(new THREE.Vector3()).length() / 2 || 1000;
     key.target.position.copy(c); fill.target.position.copy(c); rim.target.position.copy(c);
-    key.position.copy(c).add(new THREE.Vector3(0.45, 1.0, 0.6).normalize().multiplyScalar(r * 2));
-    fill.position.copy(c).add(new THREE.Vector3(-0.7, 0.45, 0.4).normalize().multiplyScalar(r * 2));
-    rim.position.copy(c).add(new THREE.Vector3(-0.2, 0.6, -1).normalize().multiplyScalar(r * 2));
+    // Warm key from above-front-right of the iso view (+X, −Z), cool fill from the left, rim from behind.
+    key.position.copy(c).add(new THREE.Vector3(0.55, 1.0, -0.45).normalize().multiplyScalar(r * 2));
+    fill.position.copy(c).add(new THREE.Vector3(0.2, 0.5, 0.9).normalize().multiplyScalar(r * 2));
+    rim.position.copy(c).add(new THREE.Vector3(-0.9, 0.7, 0.3).normalize().multiplyScalar(r * 2));
+    scene.fog = new THREE.Fog(0x9da2a8, r * 4, r * 14);
     const sc = key.shadow.camera;
     sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.near = r * 0.5; sc.far = r * 3.5;
     sc.updateProjectionMatrix();
@@ -120,9 +122,10 @@ export async function createViewer(container, { quality = 'high' } = {}) {
         return { target: c.clone(), pos: c.clone().add(new THREE.Vector3(0, size.y * 0.08, fit(r))) };
       }
       case 'head': {
-        const t = new THREE.Vector3(clr * 0.25, 0, -clr * 0.45);
-        const d = Math.max(6 * OD, 3.4 * (clr + OD));
-        return { target: t, pos: t.clone().add(new THREE.Vector3(0.35, 0.85, 0.95).normalize().multiplyScalar(d)) };
+        // Low view into the groove from the die side: tube in the groove, clamp, pressure die and wiper.
+        const t = new THREE.Vector3(-0.2 * clr, 0, -0.35 * clr);
+        const d = Math.max(7 * OD, 3.6 * (clr + OD));
+        return { target: t, pos: t.clone().add(new THREE.Vector3(0.75, 0.42, -0.95).normalize().multiplyScalar(d)) };
       }
       case 'follow': {
         const tb = tubeBox() || b, tc = tb.getCenter(new THREE.Vector3());
@@ -130,8 +133,11 @@ export async function createViewer(container, { quality = 'high' } = {}) {
         return { target: tc, pos: tc.clone().add(new THREE.Vector3(0.45, 0.6, 0.85).normalize().multiplyScalar(fit(r) * 1.05)) };
       }
       default: {
-        const r = size.length() / 2;
-        return { target: c.clone().add(new THREE.Vector3(0, -size.y * 0.08, 0)), pos: c.clone().add(new THREE.Vector3(0.55, 0.55, 0.85).normalize().multiplyScalar(fit(r) * 0.82)) };
+        // Front-right, slightly above: bend head + formed legs + front part of the bed.
+        const tb = tubeBox(), hb = new THREE.Box3(new THREE.Vector3(-6 * OD - clr, (machine?.floorY ?? -800) * 0.6, -clr - 3 * OD), new THREE.Vector3(clr + 2 * OD, 2 * OD, 3 * OD));
+        if (tb) { const fb = tb.clone(); fb.min.x = Math.max(fb.min.x, -8 * OD); hb.union(fb); }
+        const hc = hb.getCenter(new THREE.Vector3()), r = hb.getSize(new THREE.Vector3()).length() / 2;
+        return { target: hc, pos: hc.clone().add(new THREE.Vector3(0.75, 0.5, -0.9).normalize().multiplyScalar(fit(r) * 0.9)) };
       }
     }
   }
@@ -173,12 +179,14 @@ export async function createViewer(container, { quality = 'high' } = {}) {
       applyTubeTint(M, material);
       if (!floor) {
         const tex = M.textures.concrete;
-        for (const t of [tex.map, tex.roughnessMap]) t.repeat.set(30, 30);
+        for (const t of [tex.map, tex.roughnessMap]) t.repeat.set(30, 30); // 1.2 m slabs
         floor = new THREE.Mesh(new THREE.PlaneGeometry(36000, 36000), M.floor);
         floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; floor.name = 'floor';
         scene.add(floor);
       }
       floor.position.y = machine.floorY;
+      if (!contact) { contact = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), M.contactShadow); contact.name = 'contactShadow'; contact.renderOrder = 1; scene.add(contact); }
+      { const mb = machine.bounds; contact.scale.set((mb.x1 - mb.x0) * 1.12, 1, (mb.z1 - mb.z0) * 1.6); contact.position.set((mb.x0 + mb.x1) / 2, machine.floorY + 0.5, (mb.z0 + mb.z1) / 2); }
       if (!marker) {
         marker = new THREE.Group(); marker.matrixAutoUpdate = false; marker.name = 'sectionMarker';
         scene.add(marker);
