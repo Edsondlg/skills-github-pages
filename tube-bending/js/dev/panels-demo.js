@@ -5,16 +5,21 @@ import { lraFromTube } from '../geometry.js';
 import { planProcess } from '../process.js';
 import { analyzeBends, makeFieldSampler } from '../mechanics.js';
 import { MATERIALS, getMaterial } from '../materials.js';
+import { MACHINES } from '../machines.js';
+import { SAMPLES as SAMPLE_DEFS, loadSampleText } from '../samples.js';
 import { computeCost } from '../cost.js';
 import { h } from '../ui/format.js';
 
 // Paneles a montar: ?panels=fld,seccion (por omisión todos). Un import faltante es un error de consola.
 const ALL_PANELS = ['herramental', 'analisis', 'fld', 'seccion', 'costos'];
 const PANEL_IDS = (new URLSearchParams(location.search).get('panels') || ALL_PANELS.join(',')).split(',').filter(Boolean);
-const SAMPLES = ['escape_5_dobleces', 'travesano_calibre_variable', 'soporte_3d_hsla', 'horquilla_180', 'doblez_compuesto'];
-const DEFAULT_MAT = { escape_5_dobleces: 'aisi409', travesano_calibre_variable: 'hsla420', soporte_3d_hsla: 'hsla420', horquilla_180: 'sae1010-cew', doblez_compuesto: 'sae1020-dom' };
+const SAMPLES = SAMPLE_DEFS.map((x) => x.id);
+const DEFAULT_MAT = Object.fromEntries(SAMPLE_DEFS.map((x) => [x.id, x.materialId]));
 
-const state = { sample: 'escape_5_dobleces', materialId: 'aisi409', options: {}, costInputs: {}, selection: { bend: 1, s: null } };
+const state = {
+  sample: 'escape_5_dobleces', materialId: 'aisi409', options: {}, costInputs: {}, selection: { bend: 1, s: null },
+  front: 'A', machineId: 'auto', materialOverrides: {}, file: null /* { name, text } de loadFile */, importError: null,
+};
 let ctx = null;
 const mounted = [];
 const textCache = new Map();
@@ -29,27 +34,65 @@ const actions = {
     ctx = { ...ctx, costInputs: ci, cost: computeCost({ tube: ctx.tube, plan: ctx.plan, material: ctx.material, machine: ctx.plan.machine, analysis: ctx.analysis, inputs: ci }) };
     refresh(false);
   },
-  setOption(key, value) { state.options = { ...state.options, [key]: value }; return run(); },
+  setOption(key, value) {
+    const o = { ...state.options };
+    if (value == null) delete o[key]; else o[key] = value;
+    state.options = o;
+    return run();
+  },
   seek() {},
+  async loadFile(file) {
+    state.file = { name: file.name, text: await file.text() };
+    state.front = 'A'; state.selection = { bend: 0, s: null };
+    return run();
+  },
+  loadSample(id) { return demo.selectSample(id); },
+  setFront(f) { state.front = f === 'B' ? 'B' : 'A'; state.selection = { bend: 0, s: null }; return run(); },
+  setMaterial(id) { return demo.selectMaterial(id); },
+  setMaterialOverride(key, value) {
+    const o = { ...state.materialOverrides };
+    if (value == null) delete o[key]; else o[key] = value;
+    state.materialOverrides = o;
+    return run();
+  },
+  setMachine(id) { state.machineId = id || 'auto'; return run(); },
 };
 
 async function loadText(name) {
-  if (!textCache.has(name)) textCache.set(name, await (await fetch(`samples/${name}.stp`)).text());
+  if (!textCache.has(name)) textCache.set(name, await loadSampleText(SAMPLE_DEFS.find((x) => x.id === name)));
   return textCache.get(name);
 }
 
 async function run() {
-  const text = await loadText(state.sample);
-  const tube = importStepTube(text, { fileName: `${state.sample}.stp` });
-  const lra = lraFromTube(tube, { front: 'A' });
-  const material = getMaterial(state.materialId);
+  const fileName = state.file ? state.file.name : `${state.sample}.stp`;
+  let tube;
+  try {
+    tube = importStepTube(state.file ? state.file.text : await loadText(state.sample), { fileName });
+    state.importError = null;
+  } catch (e) {
+    // Archivo inválido: se conserva la pieza anterior y se muestra el error.
+    state.importError = `No se pudo leer «${fileName}»: ${e.message}`;
+    state.file = null;
+    if (ctx) { ctx = { ...ctx, importError: state.importError }; refresh(); }
+    return;
+  }
+  if (state.file) state.sample = null;
+  const lra = lraFromTube(tube, { front: state.front });
+  const material = { ...getMaterial(state.materialId), ...state.materialOverrides };
   const options = state.options;
-  const plan = planProcess({ tube, lra, material, options });
+  const planOptions = state.machineId === 'auto' ? options : { ...options, machineId: state.machineId };
+  const plan = planProcess({ tube, lra, material, options: planOptions });
   const analysis = analyzeBends({ tube, lra, plan, material, options });
   const sampler = makeFieldSampler({ tube, lra, plan, analysis, material, options });
   const cost = computeCost({ tube, plan, material, machine: plan.machine, analysis, inputs: state.costInputs });
   if (state.selection.bend != null && state.selection.bend >= plan.bends.length) state.selection = { bend: 0, s: null };
-  ctx = { tube, lra, plan, analysis, sampler, cost, material, machine: plan.machine, options, costInputs: state.costInputs, sim: { t: 0, state: null }, selection: state.selection, actions };
+  ctx = {
+    tube, lra, plan, analysis, sampler, cost, material, machine: plan.machine, options, costInputs: state.costInputs,
+    sim: { t: 0, state: null }, selection: state.selection,
+    fileName, importError: state.importError, samples: SAMPLE_DEFS, currentSampleId: state.sample,
+    materials: MATERIALS, machines: MACHINES, materialId: state.materialId, materialOverrides: state.materialOverrides,
+    machineId: state.machineId, interference: [], actions,
+  };
   refresh();
 }
 
@@ -81,12 +124,16 @@ const demo = {
   get ctx() { return ctx; },
   async selectSample(name, materialId) {
     state.sample = name; state.materialId = materialId ?? DEFAULT_MAT[name] ?? state.materialId;
-    state.selection = { bend: 0, s: null };
+    state.selection = { bend: 0, s: null }; state.file = null; state.front = 'A'; state.materialOverrides = {};
     document.getElementById('demo-sample').value = name;
     document.getElementById('demo-material').value = state.materialId;
     await run();
   },
-  async selectMaterial(id) { state.materialId = id; document.getElementById('demo-material').value = id; await run(); },
+  async selectMaterial(id) {
+    state.materialId = id; state.materialOverrides = {};
+    document.getElementById('demo-material').value = id;
+    await run();
+  },
   selectBend(i) { actions.selectBend(i); },
   setS(s) { actions.selectSection(s); },
   setTheme(t) { document.documentElement.dataset.theme = t; },
