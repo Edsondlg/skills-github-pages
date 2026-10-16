@@ -300,7 +300,9 @@ export function buildKinematics({ lra, plan, OD }) {
           if (seen.has(key)) continue;
           const mn = vol.min, mx = vol.max;
           for (let i = 0; i < ns; i++) {
-            if (Math.abs(sArr[i] - sTan) <= 1.5 * od) continue;
+            // Only the already-formed part ahead of the tangent can swing into the machine; the rear
+            // straight runs on the machine axis through the collet, pressure die and wiper by design.
+            if (sArr[i] >= sTan - 1.5 * od) continue;
             const x = poses[16 * i + 12], y = poses[16 * i + 13], z = poses[16 * i + 14];
             if (x >= mn[0] - r && x <= mx[0] + r && y >= mn[1] - r && y <= mx[1] + r && z >= mn[2] - r && z <= mx[2] + r) {
               seen.add(key);

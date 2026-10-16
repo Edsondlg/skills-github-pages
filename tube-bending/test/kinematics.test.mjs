@@ -220,3 +220,12 @@ test('G7 posesAt: N = 2500 stations, 10 bends, average < 4 ms', () => {
   const avg = (performance.now() - t0) / 200;
   assert.ok(avg < 4, `average ${avg.toFixed(3)} ms`);
 });
+
+test('interference ignores the rear straight running through the tooling on the machine axis', () => {
+  const OD = 25;
+  // A machine body that encloses the axis behind the tangent (pressure die / wiper housings) and the
+  // straight part of the machine axis: the unbent rear tube always passes there by design.
+  const pdHousing = [{ name: 'carcasa dado de presión', min: [-600, -40, -40], max: [-80, 40, 40] }];
+  const flat = { bends: [{ L: 400, R: 0, A: 90, clr: 50 }, { L: 100, R: 180, A: 45, clr: 50 }], tail: 300 };
+  assert.deepEqual(buildKinematics({ lra: flat, plan: planFromLRA(flat), OD }).interference(pdHousing, OD), []);
+});
