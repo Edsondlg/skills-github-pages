@@ -9,8 +9,20 @@ let current = null; // { shape, faces: Map, edges: Map, vertices: Map }
 const TAU = Math.PI * 2;
 // Integración de Gauss de OCCT: exacta en geometría analítica y polinómica. Las splines
 // racionales se aproximan con polinómicas (ver makeSplineEdge) porque ahí pierde precisión.
-const gpropVolume = (s, g) => oc.BRepGProp.VolumeProperties(s, g, false, false, false);
-const gpropSurface = (s, g) => oc.BRepGProp.SurfaceProperties(s, g, false, false);
+// Propiedades de masa. Con curvas y superficies analíticas (incluida la elipse) la Gauss por
+// defecto de OCCT es exacta y rápida; con B-splines/Bézier comete errores de ~3e-4, así que ahí
+// se usa Gauss–Kronrod adaptativa por tramo (IsUseSpan), que coincide con el área 2D exacta (~1e-9).
+const GPROP_EPS = 1e-7;
+const FREEFORM_CURVES = new Set(['BEZIER_CURVE', 'BSPLINE_CURVE', 'OFFSET_CURVE', 'OTHER_CURVE']);
+const FREEFORM_SURFACES = new Set(['BEZIER_SURFACE', 'BSPLINE_SURFACE', 'OFFSET_SURFACE', 'OTHER_SURFACE']);
+const hasFreeform = (shape) => shape.edges.some((e) => FREEFORM_CURVES.has(e.geomType))
+  || shape.faces.some((f) => FREEFORM_SURFACES.has(f.geomType));
+const gpropVolume = (shape, g) => (hasFreeform(shape)
+  ? oc.BRepGProp.VolumePropertiesGK(shape.wrapped, g, GPROP_EPS, false, true, true, true, false)
+  : oc.BRepGProp.VolumeProperties(shape.wrapped, g, false, false, false));
+const gpropSurface = (shape, g) => (hasFreeform(shape)
+  ? oc.BRepGProp.SurfaceProperties(shape.wrapped, g, GPROP_EPS, false)
+  : oc.BRepGProp.SurfaceProperties(shape.wrapped, g, false, false));
 // Tolerancia (mm) de la aproximación polinómica de splines racionales.
 const RATIONAL_APPROX_TOL = 1e-5;
 
@@ -366,7 +378,7 @@ function makeRegionFace(outerSegs, holeSegsList, F, tol, label) {
 
 function surfaceArea(shape) {
   const g = new oc.GProp_GProps();
-  gpropSurface(shape.wrapped, g);
+  gpropSurface(shape, g);
   const a = g.Mass();
   g.delete();
   return a;
@@ -374,7 +386,7 @@ function surfaceArea(shape) {
 
 function volumeOf(shape) {
   const g = new oc.GProp_GProps();
-  gpropVolume(shape.wrapped, g);
+  gpropVolume(shape, g);
   const v = g.Mass();
   g.delete();
   return v;
@@ -588,6 +600,37 @@ function buildMultiview(job, warnings) {
 const hashOf = (s) => oc.ReplicadShapeHasher.HashCode(s, R.HASH_CODE_MAX);
 const pnt = (p) => [p.X(), p.Y(), p.Z()];
 const dirArr = (d) => [d.X(), d.Y(), d.Z()];
+// Cono reconstruido a partir de puntos evaluados (gp_Cone no está enlazado en esta compilación):
+// dos circunferencias isoparamétricas u (en v0 y v1) dan eje, radio de referencia y semiángulo.
+function circleThrough(a, b, c) {
+  const sub = (p, q) => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+  const cross = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+  const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  const ab = sub(b, a), ac = sub(c, a), n = cross(ab, ac), n2 = dot(n, n);
+  const t1 = cross(n, ab).map((x) => x * dot(ac, ac)), t2 = cross(ac, n).map((x) => x * dot(ab, ab));
+  const off = [0, 1, 2].map((k) => (t1[k] + t2[k]) / (2 * n2));
+  const center = [a[0] + off[0], a[1] + off[1], a[2] + off[2]];
+  const len = Math.sqrt(n2);
+  return { center, radius: Math.sqrt(dot(off, off)), normal: n.map((x) => x / len) };
+}
+
+function coneInfo(ad) {
+  const u0 = ad.FirstUParameter(), v0 = ad.FirstVParameter(), v1 = ad.LastVParameter();
+  const at = (u, v) => { const q = ad.Value(u, v); const r = pnt(q); q.delete(); return r; };
+  const ring = (v) => circleThrough(at(u0, v), at(u0 + 2 * Math.PI / 3, v), at(u0 + 4 * Math.PI / 3, v));
+  const c0 = ring(v0), c1 = ring(v1);
+  const d = [c1.center[0] - c0.center[0], c1.center[1] - c0.center[1], c1.center[2] - c0.center[2]];
+  const h = Math.hypot(...d);
+  if (!(h > 1e-12)) return {};
+  const dir = d.map((x) => x / h);
+  return {
+    radius: c0.radius,
+    radius2: c1.radius,
+    semiAngleDeg: (Math.atan2(Math.abs(c1.radius - c0.radius), h) * 180) / Math.PI,
+    axis: { p: c0.center, d: dir },
+  };
+}
+
 function ax1Info(ax) {
   const l = ax.Location(), d = ax.Direction();
   const r = { p: pnt(l), d: dirArr(d) };
@@ -601,7 +644,7 @@ const EDGE_TYPES = { LINE: 'line', CIRCLE: 'circle', ELLIPSE: 'ellipse', BSPLINE
 function faceInfo(face, id) {
   const type = FACE_TYPES[face.geomType] || 'other';
   const g = new oc.GProp_GProps();
-  oc.BRepGProp.SurfaceProperties(face.wrapped, g, false, false);
+  gpropSurface(face, g);
   const c = g.CentreOfMass();
   const info = { id, type, area: g.Mass(), center: pnt(c) };
   c.delete(); g.delete();
@@ -617,11 +660,7 @@ function faceInfo(face, id) {
       info.axis = ax1Info(ax);
       ax.delete(); cy.delete();
     } else if (type === 'cone') {
-      const co = ad.Cone(), ax = co.Axis();
-      info.radius = co.RefRadius();
-      info.semiAngleDeg = (co.SemiAngle() * 180) / Math.PI;
-      info.axis = ax1Info(ax);
-      ax.delete(); co.delete();
+      Object.assign(info, coneInfo(ad));
     } else if (type === 'sphere') {
       const sp = ad.Sphere(), l = sp.Location();
       info.radius = sp.Radius();
@@ -719,7 +758,7 @@ function jacobiEigen(M) {
 
 function computeProps(shape, topo) {
   const g = new oc.GProp_GProps();
-  gpropVolume(shape.wrapped, g);
+  gpropVolume(shape, g);
   const volume = g.Mass();
   const cP = g.CentreOfMass();
   const centroid = pnt(cP);

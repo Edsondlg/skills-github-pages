@@ -1,6 +1,7 @@
 // Pruebas del núcleo CAD con OpenCascade real en Node.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { segAreaTerm } from '../src/geom2d/segments.js';
 import * as K from '../src/kernel/core.js';
 
 await K.init();
@@ -243,6 +244,27 @@ test('7. elipse, Bézier y spline: caras válidas con área analítica', () => {
   const h = 1e-6;
   const df = (u) => { const a = f(u - h), b = f(u + h); return [(b[0] - a[0]) / (2 * h), (b[1] - a[1]) / (2 * h)]; };
   close(area({ segs: [{ type: 'spline', degree: 3, ctrl: sc, knots: kn, weights: null }, L([50, 0], [0, 0])] }), Math.abs(greenArea(f, df, [[0, 0.5], [0.5, 1]])), 1e-5, 'spline');
+});
+
+test('7b. spline cerrada (leva): volumen = área 2D exacta (integración por tramos)', () => {
+  // Spline cúbica cerrada no racional con 9 tramos; la Gauss por defecto de OCCT daba ~3e-4 de error.
+  const ctrl = [[0, -1.6], [1.4, -1.5], [2.1, -0.4], [2.2, 1], [1.4, 2.1], [0.2, 2.6], [-1, 2.2], [-1.9, 1.2], [-2, -0.2], [-1.6, -1.3], [-0.8, -1.7], [0, -1.6]];
+  const spline = { type: 'spline', degree: 3, ctrl, knots: [0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 9], weights: null };
+  const r = K.build(extrudeJob([{ id: 'leva', outer: { segs: [spline] }, holes: [] }], 1));
+  assert.equal(r.props.valid, true);
+  close(r.props.volume, Math.abs(segAreaTerm(spline)), 1e-8, 'volumen spline');
+});
+
+test('3b. revolución con chaflán: cara cónica con eje, radios y semiángulo', () => {
+  const outer = { segs: [L([10, 0], [20, 0]), L([20, 0], [20, 25]), L([20, 25], [15, 30]), L([15, 30], [10, 30]), L([10, 30], [10, 0])] };
+  const r = K.build({ mode: 'revolve', tol: 0.01, regions: [{ id: 1, outer, holes: [] }], revolve: { axis: { p: [0, 0], d: [0, 1] }, angleDeg: 360 } });
+  const A = 300 - 12.5, xc = (300 * 15 - 12.5 * (20 - 5 / 3)) / A;
+  close(r.props.volume, 2 * PI * xc * A, 1e-9, 'Pappus');
+  const cone = r.topology.faces.find((f) => f.type === 'cone');
+  assert.ok(cone, 'cara cónica');
+  close(cone.semiAngleDeg, 45, 1e-9, 'semiángulo');
+  assert.deepEqual([cone.radius, cone.radius2].map((x) => Math.round(x * 1e9) / 1e9).sort(), [15, 20]);
+  assert.ok(Math.abs(Math.abs(cone.axis.d[1]) - 1) < 1e-12, 'eje Y');
 });
 
 test('8. distancias exactas: caras paralelas de placa t=3 y vértice–punto', () => {

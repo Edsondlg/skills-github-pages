@@ -117,3 +117,10 @@ test('catálogo de materiales', () => {
   assert.equal(materialGroups().reduce((n, g) => n + g.items.length, 0), MATERIALS.length);
   assert.equal(customMaterial(3.3, 'X').id, CUSTOM_MATERIAL_ID);
 });
+
+test('agujeros de forma libre (d = null) no anulan el Ø mínimo', () => {
+  const build = { props: { volume: 9000, area: 1, centroid: [0, 0, 0], inertia: { Ixx: 0, Iyy: 0, Izz: 0, Pxy: 0, Pxz: 0, Pyz: 0 }, principal: { moments: [0, 0, 0], axes: [] }, bbox: { min: [0, 0, 0], max: [100, 50, 2], size: [100, 50, 2] }, counts: {}, valid: true, closed: true } };
+  const profile = { netArea: 4500, perimeterOuter: 300, perimeterInner: 50, loops: 3, holes: [{ d: null, c: [10, 10] }, { d: 8.5, c: [50, 25] }], bbox2d: { minX: 0, minY: 0, maxX: 100, maxY: 50 } };
+  const pd = computePartData({ build, material: findMaterial('a36') ?? MATERIALS[0], profile, mode: 'extrude', thickness: 2 });
+  assert.equal(pd.sheet.minHoleDiameter, 8.5);
+});

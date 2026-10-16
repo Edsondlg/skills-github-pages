@@ -105,7 +105,8 @@ export function computePartData({ build, material, profile = null, mode, thickne
       utilization: blankArea > 0 ? (profile.netArea / blankArea) * 100 : 0,
       cutLength,
       holes: holes.length,
-      minHoleDiameter: holes.length ? Math.min(...holes.map((h) => h.d)) : null,
+      // Solo agujeros circulares (d numérico); los de forma libre traen d = null.
+      minHoleDiameter: holes.some((h) => Number.isFinite(h.d)) ? Math.min(...holes.filter((h) => Number.isFinite(h.d)).map((h) => h.d)) : null,
       shearStrength: tau,
       cuttingForce: F != null ? force(F) : null,
       strippingForce: F != null ? force(F * STRIP_FACTOR) : null, // estimación
