@@ -35,3 +35,8 @@
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Tube bending simulator
+tube-bending/node_modules/
+tube-bending/.scratch/
+tube-bending/dist/
