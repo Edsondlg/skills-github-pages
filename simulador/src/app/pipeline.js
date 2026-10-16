@@ -122,6 +122,8 @@ export function importImage(imageData, opts = {}) {
  * @property {Object[]} nodes     árbol de anidamiento de buildRegions; nodes[i] ↔ loops[i]. Los contornos del marco
  *                                no participan: { parent: -1, depth: 0, children: [], frame: true }
  * @property {number[]} frameLoops  índices en loops del marco del plano excluido (vacío si no hay)
+ * @property {number[]} annotationLoops  índices en loops de los círculos exteriores de pares concéntricos
+ *                                (avellanado/rosca) excluidos del anidamiento; nodos con annotation: true
  * @property {Array<{p0:number[],p1:number[],length:number}>} axisLines  líneas de eje/trazos (mm), de mayor a menor
  * @property {Object} stats       { segmentsIn, segmentsUsed, hiddenRemoved, dashedRemoved, duplicatesRemoved,
  *                                  zeroLengthRemoved, loops, regions, holes, openChains }
@@ -141,13 +143,16 @@ export function importImage(imageData, opts = {}) {
  * @param {number} [o.tol=0.01]       mm
  * @param {number} [o.chordTol=0.01]  mm (teselado de loopInfo/buildRegions)
  * @param {boolean} [o.detectFrame=true]  detectar el marco del plano (ver detectFrameLoops) y sacarlo de las regiones
+ * @param {boolean} [o.concentricAsAnnotation=true]  par de círculos concéntricos (agujero + isla) = avellanado o rosca:
+ *   el círculo exterior se trata como anotación y el interior queda como barreno
+ * @param {?number[]} [o.annotationLoops=null]  índices en loops de las anotaciones; si se da, sustituye a la detección
  * @param {?number[]} [o.frameLoops=null]  índices en loops del marco elegidos por el usuario (posiblemente vacío);
  *   si se da, sustituye a la detección. Los índices son estables para el mismo dibujo y las mismas opciones.
  * Los contornos del marco siguen en loops/loopInfos (para dibujarlos) con sus índices originales; las regiones se
  * calculan sin ellos y sus índices outer/holes apuntan a loops.
  * @returns {Profile}
  */
-export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = true, hiddenLayers = [], tol = 0.01, chordTol = 0.01, detectFrame = true, frameLoops = null } = {}) {
+export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = true, hiddenLayers = [], tol = 0.01, chordTol = 0.01, detectFrame = true, frameLoops = null, concentricAsAnnotation = true, annotationLoops = null } = {}) {
   let toMM;
   if (unitOverride == null || unitOverride === 'auto') toMM = drawing.units.toMM;
   else if (typeof unitOverride === 'number' && unitOverride > 0) toMM = unitOverride;
@@ -182,12 +187,24 @@ export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = 
     frame = detectFrameLoops(L.loops, loopInfos, buildRegions(L.loops, { chordTol }).nodes, tol);
     if (frame.length) warnings.push('Se detectó el marco del plano y se excluyó del modelo (haz clic en él para incluirlo).');
   } else frame = [];
-  const { nodes, regions } = regionsWithout(L.loops, frame, chordTol);
+  // Anotaciones: círculo exterior de pares concéntricos (se anida sin el marco).
+  const fr = new Set(frame);
+  let annotation = [];
+  if (Array.isArray(annotationLoops)) annotation = [...new Set(annotationLoops)].filter((i) => Number.isInteger(i) && i >= 0 && i < L.loops.length && !fr.has(i)).sort((a, b) => a - b);
+  else if (concentricAsAnnotation) {
+    const found = detectConcentricAnnotations(L.loops, loopInfos, regionsWithout(L.loops, frame, chordTol).nodes, tol);
+    annotation = found.map((p) => p.outer);
+    if (found.length) {
+      const ds = found.slice(0, 3).map((p) => (2 * loopInfos[p.inner].circle.r).toFixed(3)).join(', ');
+      warnings.push(`Se interpretaron ${found.length} pares de círculos concéntricos como avellanado o rosca: se usa el círculo interior como barreno (Ø ${ds}).`);
+    }
+  }
+  const { nodes, regions } = regionsWithout(L.loops, [...frame, ...annotation], chordTol, new Set(annotation));
   const holes = regions.reduce((n, r) => n + r.holes.length, 0);
   if (!L.loops.length) warnings.push('No se encontraron contornos cerrados en el plano.');
   if (L.open.length) warnings.push(`${L.open.length} cadena(s) abierta(s) no forman contorno y no se usarán en 3D.`);
   return {
-    toMM, tol, segments, loops: L.loops, loopInfos, open: L.open, regions, nodes, frameLoops: frame, axisLines,
+    toMM, tol, segments, loops: L.loops, loopInfos, open: L.open, regions, nodes, frameLoops: frame, annotationLoops: annotation, axisLines,
     stats: {
       segmentsIn: drawing.segments.length, segmentsUsed: segments.length, hiddenRemoved, dashedRemoved,
       duplicatesRemoved: L.stats.duplicatesRemoved, zeroLengthRemoved: L.stats.zeroLengthRemoved,
@@ -235,13 +252,25 @@ function detectFrameLoops(loops, infos, nodes, tol) {
   return [];
 }
 
+// Pares (agujero circular H, isla circular I) concéntricos con I menor: H es anotación (avellanado/rosca).
+function detectConcentricAnnotations(loops, infos, nodes, tol) {
+  const out = [];
+  nodes.forEach((n, h) => {
+    if (n.frame || n.depth % 2 !== 1 || !infos[h].circle) return;
+    const inner = n.children.find((i) => concentricCircles(infos[h], infos[i], tol) && infos[i].circle.r < infos[h].circle.r);
+    if (inner != null) out.push({ outer: h, inner });
+  });
+  return out;
+}
+
 // buildRegions sin los contornos excluidos, con los índices remapeados a loops.
-function regionsWithout(loops, excluded, chordTol) {
+// Los índices de `annotation` llevan annotation: true en vez de frame: true.
+function regionsWithout(loops, excluded, chordTol, annotation = new Set()) {
   if (!excluded.length) return buildRegions(loops, { chordTol });
   const ex = new Set(excluded);
   const keep = loops.map((_, i) => i).filter((i) => !ex.has(i));
   const sub = buildRegions(keep.map((i) => loops[i]), { chordTol });
-  const nodes = loops.map((loop) => ({ loop, parent: -1, depth: 0, children: [], frame: true }));
+  const nodes = loops.map((loop, i) => ({ loop, parent: -1, depth: 0, children: [], ...(annotation.has(i) ? { annotation: true } : { frame: true }) }));
   sub.nodes.forEach((n, j) => {
     nodes[keep[j]] = { loop: n.loop, parent: n.parent < 0 ? -1 : keep[n.parent], depth: n.depth, children: n.children.map((c) => keep[c]) };
   });
@@ -254,8 +283,6 @@ function regionsWithout(loops, excluded, chordTol) {
  * - regions[i] ↔ profile.regions[i]; holes[k] ↔ profile.regions[i].holes[k].
  *   height/z0/depth null = por defecto (espesor general / 0 / mitad de la altura para ciegos).
  * - El marco del plano ya viene fuera de profile.regions (prepareProfile).
- * - Una isla circular concéntrica con su agujero circular (convención de avellanado o rosca) se excluye
- *   y se avisa en `warnings`.
  * - Eje de revolución: la línea de trazos más larga del dibujo (axisKind 'x'/'y' si coincide con un eje
  *   coordenado), o el eje X si no hay ninguna.
  * @param {Profile} profile
@@ -263,15 +290,7 @@ function regionsWithout(loops, excluded, chordTol) {
  */
 export function defaultOpState(profile) {
   const warnings = [];
-  const tol = profile.tol ?? 0.01;
-  let concentric = 0;
-  const regions = profile.regions.map((r) => {
-    const parent = profile.nodes[r.outer].parent;
-    const skip = parent >= 0 && concentricCircles(profile.loopInfos[parent], profile.loopInfos[r.outer], tol);
-    if (skip) concentric++;
-    return { included: !skip, height: null, z0: null, holes: r.holes.map(() => ({ op: 'through', depth: null })) };
-  });
-  if (concentric) warnings.push(`Se ignoraron ${concentric} círculos concéntricos dentro de agujeros (avellanados o roscas)`);
+  const regions = profile.regions.map((r) => ({ included: true, height: null, z0: null, holes: r.holes.map(() => ({ op: 'through', depth: null })) }));
 
   let revolve = { axisKind: 'x', axis: { p: [0, 0], d: [1, 0] }, angleDeg: 360 };
   const a = profile.axisLines?.[0];

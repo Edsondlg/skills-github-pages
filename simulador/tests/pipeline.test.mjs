@@ -215,21 +215,36 @@ const C = (x, y, r) => ({ type: 'circle', c: [x, y], r, ccw: true, meta: { layer
 const drw = (segments) => ({ ...synthetic(), segments });
 const regionOf = (profile, area) => profile.regions.findIndex((r) => Math.abs(profile.loopInfos[r.outer].area - area) < 1e-6 * area);
 
-test('(a) placa con agujeros de círculos concéntricos: no es marco; islas concéntricas excluidas', () => {
-  const profile = prepareProfile(drw([...rectSegs(0, 0, 200, 100), C(50, 50, 8), C(50, 50, 4.5), C(150, 50, 8), C(150, 50, 4.5)]));
+test('(a) placa con círculos concéntricos (avellanado/rosca): el círculo interior es el barreno', () => {
+  const segs = () => drw([...rectSegs(0, 0, 200, 100), C(50, 50, 8), C(50, 50, 4.5), C(150, 50, 8), C(150, 50, 4.5)]);
+  const profile = prepareProfile(segs());
   assert.deepEqual(profile.frameLoops, []);
   assert.ok(!profile.warnings.includes(FRAME_WARN));
-  assert.equal(profile.regions.length, 3);
+  assert.equal(profile.regions.length, 1);
+  const hs = profile.regions[0].holes;
+  assert.equal(hs.length, 2);
+  assert.ok(hs.every((h) => Math.abs(profile.loopInfos[h].circle.r - 4.5) < 1e-9));
+  assert.equal(profile.annotationLoops.length, 2);
+  assert.ok(profile.annotationLoops.every((i) => Math.abs(profile.loopInfos[i].circle.r - 8) < 1e-9 && profile.nodes[i].annotation === true && profile.nodes[i].parent === -1));
+  assert.ok(profile.warnings.includes('Se interpretaron 2 pares de círculos concéntricos como avellanado o rosca: se usa el círculo interior como barreno (Ø 9.000, 9.000).'));
   const op = defaultOpState(profile);
-  const plate = regionOf(profile, 20000);
-  assert.equal(op.regions[plate].included, true);
-  assert.equal(profile.regions[plate].holes.length, 2);
-  const islands = op.regions.filter((_, i) => i !== plate);
-  assert.equal(islands.length, 2);
-  assert.ok(islands.every((r) => r.included === false));
-  assert.deepEqual(op.warnings, ['Se ignoraron 2 círculos concéntricos dentro de agujeros (avellanados o roscas)']);
-  const r = K.build(makeJob(profile, op));
-  close(r.props.volume, 2 * (20000 - 2 * 64 * PI), 1e-9);
+  assert.deepEqual(op.warnings, []);
+  assert.equal(op.regions.length, 1);
+  op.thickness = 3;
+  close(K.build(makeJob(profile, op)).props.volume, (20000 - 2 * PI * 4.5 ** 2) * 3, 1e-9);
+  // Sin la opción: anidamiento antiguo (agujero r=8 + isla r=4.5).
+  const old = prepareProfile(segs(), { concentricAsAnnotation: false });
+  assert.deepEqual(old.annotationLoops, []);
+  assert.equal(old.regions.length, 3);
+  const plate = regionOf(old, 20000);
+  assert.ok(old.regions[plate].holes.every((h) => Math.abs(old.loopInfos[h].circle.r - 8) < 1e-9));
+  assert.ok(!old.warnings.some((w) => w.includes('concéntricos')));
+  // annotationLoops explícito (vacío) sustituye a la detección.
+  assert.equal(prepareProfile(segs(), { annotationLoops: [] }).regions.length, 3);
+  // Isla no concéntrica dentro de un agujero: no es anotación.
+  const nc = prepareProfile(drw([...rectSegs(0, 0, 200, 100), C(50, 50, 20), C(55, 50, 4.5)]), { detectFrame: false });
+  assert.deepEqual(nc.annotationLoops, []);
+  assert.equal(nc.regions.length, 2);
 });
 
 test('(b) A3 de doble borde con una pieza: marco detectado y sin masa', () => {
@@ -302,7 +317,8 @@ test('alturas distintas por región: sin datos de lámina', () => {
 });
 
 test("agujero 'none' con isla dentro: la isla queda en material macizo", () => {
-  const profile = prepareProfile(drw([...rectSegs(0, 0, 100, 100), C(50, 50, 10), C(50, 50, 5)]));
+  // Anidamiento antiguo (sin anotación) para tener la isla dentro del agujero.
+  const profile = prepareProfile(drw([...rectSegs(0, 0, 100, 100), C(50, 50, 10), C(50, 50, 5)]), { concentricAsAnnotation: false });
   const op = defaultOpState(profile);
   const plate = regionOf(profile, 10000), island = 1 - plate;
   op.regions[island].included = true;
