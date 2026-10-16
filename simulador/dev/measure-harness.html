@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Arnés: medición 3D</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #16191d; font: 13px system-ui, sans-serif; color: #e8edf2; }
+  #v { position: absolute; inset: 0; }
+  #panel { position: absolute; left: 10px; top: 10px; width: 300px; padding: 8px 10px; border-radius: 8px;
+    background: rgba(22,25,30,.85); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  #panel select { width: 100%; }
+  #hint { margin: 6px 0; color: #ffc94a; min-height: 1.2em; }
+  #list { margin: 0; padding-left: 18px; max-height: 260px; overflow: auto; }
+  #list li { margin: 2px 0; }
+</style>
+</head>
+<body>
+<div id="v"></div>
+<div id="panel">
+  <select id="tool">
+    <option value="none">Sin herramienta</option>
+    <option value="inspect">Inspeccionar</option>
+    <option value="point">Distancia entre puntos</option>
+    <option value="distance">Distancia mínima</option>
+    <option value="angle">Ángulo</option>
+    <option value="radius">Radio / diámetro</option>
+    <option value="area">Área</option>
+    <option value="coords">Coordenadas</option>
+    <option value="thickness">Espesor</option>
+  </select>
+  <div id="hint"></div>
+  <ol id="list"></ol>
+</div>
+<script src="build/measure.js"></script>
+</body>
+</html>
