@@ -20,10 +20,13 @@ const KEYS = ['material', 'machine', 'tooling', 'setup', 'scrap', 'consumables',
 
 test('G3 mass of soporte_3d_hsla (OD 50.8 × 1.65) matches a hand calculation within 1 %', () => {
   const c = setup('soporte_3d_hsla');
-  // developed length by hand: straights 250 + 160 + 220 + tail 180, arcs at the load angle, + scrap
+  // developed length by hand: straights 250 + 160 + 220 + tail 180 shortened by the springback
+  // feed compensation, arcs at the load angle, + scrap
   const arcs = c.plan.bends.reduce((a, b) => a + 101.6 * b.angleLoad * DEG, 0);
-  const cut = 250 + 160 + 220 + 180 + arcs + c.plan.layout.frontScrap + c.plan.layout.tailScrap;
-  assert.ok(cut > 1155 && cut < 1300, `cut ${cut}`);
+  const comp = c.plan.bends.reduce((a, b) => a + b.feedCompensation, 0) + (180 - c.plan.layout.tailLength);
+  assert.ok(comp > 0 && comp < 20, `compensation ${comp}`);
+  const cut = 250 + 160 + 220 + 180 - comp + arcs + c.plan.layout.frontScrap + c.plan.layout.tailScrap;
+  assert.ok(cut > 1140 && cut < 1300, `cut ${cut}`);
   const hand = 7850 * Math.PI * (50.8 - 1.65) * 1.65 * cut * 1e-9; // ≈ 2.4 kg
   const cost = computeCost({ ...c });
   assert.ok(Math.abs(cost.massKg - hand) / hand < 0.01, `${cost.massKg} vs ${hand}`);
@@ -67,9 +70,12 @@ test('G3 variable-wall travesano mass integrates the wall profile', () => {
   const { cutLength, frontScrap, tailScrap } = c.plan.layout;
   assert.equal(frontScrap, 0); assert.equal(tailScrap, 0);
   const A = (t) => Math.PI * (38.1 - t) * t;
-  // 2 × 120 mm at 2.4, 2 × 30 mm linear tapers 2.4 → 1.2, the rest (incl. stretched bends) at 1.2
+  // 120 mm at 2.4 + 30 mm linear taper 2.4 → 1.2 at each end, scaled with its end straight (200 and
+  // 210 mm in the CAD, shortened by the springback feed compensation); the rest at 1.2
   const taper = 30 * Math.PI * (38.1 * 1.8 - (2.4 ** 3 - 1.2 ** 3) / (3 * 1.2));
-  const hand = 7850e-9 * (2 * 120 * A(2.4) + 2 * taper + (cutLength - 300) * A(1.2));
+  const kF = c.plan.bends[0].feedLength / 200, kT = c.plan.layout.tailLength / 210;
+  const thickLen = 150 * (kF + kT);
+  const hand = 7850e-9 * (120 * (kF + kT) * A(2.4) + (kF + kT) * taper + (cutLength - thickLen) * A(1.2));
   assert.ok(Math.abs(cost.massKg - hand) / hand < 1e-3, `${cost.massKg} vs ${hand}`);
   const nominal = 7850e-9 * A(1.2) * cutLength;
   assert.ok(cost.massKg > nominal * 1.1, 'profile mass differs from nominal-wall mass');

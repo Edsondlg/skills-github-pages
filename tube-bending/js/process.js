@@ -96,6 +96,23 @@ export function planProcess({ tube, lra, material, machine, options = {} }) {
   }
   if (opts.springbackFactor !== 1) assumptions.push(`Recuperación elástica del modelo multiplicada por ${opts.springbackFactor} (calibración del usuario)`);
 
+  // Feed-length compensation for springback: on release a bend keeps its arc length but opens to
+  // radius clrAfter > clr, which moves each tangent point by dT = (clrAfter − clr)·tan(A/2) away
+  // from the CAD intersection point. Shortening the material straights by the dT of both
+  // neighbouring bends keeps the intersection points (XYZ) of the finished part equal to the CAD.
+  // A 180° bend has no intersection point: it is not compensated (its leg spacing grows 2·ΔR).
+  const dT = info.map((x, i) => {
+    const A = lra.bends[i].A;
+    return A < 179.5 ? (x.clrAfter - lra.bends[i].clr) * Math.tan(A * DEG / 2) : 0;
+  });
+  const feedL = lra.bends.map((b, i) => b.L - dT[i] - (i > 0 ? dT[i - 1] : 0));
+  let tailL = lra.tail - dT[nb - 1];
+  feedL.forEach((L, i) => {
+    if (L < 0) { warnings.push(`Doblez ${i + 1}: la compensación por recuperación elástica deja una recta negativa (${f1(L)} mm); se usa 0`); feedL[i] = 0; }
+  });
+  if (tailL < 0) { warnings.push(`Cola: la compensación por recuperación elástica deja una recta negativa (${f1(tailL)} mm); se usa 0`); tailL = 0; }
+  if (dT.some((d) => Math.abs(d) > 1e-9)) assumptions.push('Rectas compensadas por la recuperación elástica: el avance se acorta para que los puntos de intersección (XYZ) de la pieza terminada coincidan con el CAD; el radio final crece a CLR·A_carga/A');
+
   // ─── 2. Stacks: one per distinct CLR; level 0 (bottom) = most used CLR (ties: first used) ───
   const groups = [];
   lra.bends.forEach((b, i) => {
@@ -117,15 +134,15 @@ export function planProcess({ tube, lra, material, machine, options = {} }) {
   // ─── 3. Scrap ───
   // Front scrap: the clamp grips the straight ahead of the tangent (L_i). If the first straight is
   // shorter than the clamp, grip material is added at the front and trimmed after bending.
-  const clampOK = lra.bends.map((b, i) => b.L >= clampLen[stackOf[i]] - 1e-9);
-  const frontScrap = clampOK[0] ? 0 : clampLen[stackOf[0]] - lra.bends[0].L;
+  const clampOK = feedL.map((L, i) => L >= clampLen[stackOf[i]] - 1e-9);
+  const frontScrap = clampOK[0] ? 0 : clampLen[stackOf[0]] - feedL[0];
   // Collet: grip length max(1.5·OD, 40 mm); body OD + 30 mm (jaw and nose wall).
   const collet = { gripLength: Math.max(1.5 * OD, 40), OD: OD + 30 };
   // Tail scrap: at the last bend the collet must grip gripLength of material and keep a safety gap
   // of max(OD, 20 mm) to the tangent point (collet nose clear of bend die / wiper tip).
   const colletSafety = Math.max(OD, 20);
   const tailNeeded = collet.gripLength + colletSafety;
-  const tailScrap = lra.tail >= tailNeeded ? 0 : tailNeeded - lra.tail;
+  const tailScrap = tailL >= tailNeeded ? 0 : tailNeeded - tailL;
   assumptions.push(`Mordaza: si la recta frontal es menor que la mordaza se agrega material de sujeción al frente (se recorta después); boquilla: sujeción ${f1(collet.gripLength)} mm + ${f1(colletSafety)} mm de holgura al punto de tangencia`);
 
   // ─── 4. Layout in material coordinates (s = 0 at the front end) ───
@@ -136,13 +153,13 @@ export function planProcess({ tube, lra, material, machine, options = {} }) {
   const zone = (len, plen) => { zones.push({ m0: m, m1: m + len, p0: p, p1: p + plen }); m += len; p += plen; };
   if (frontScrap > 0) zone(frontScrap, 0);
   lra.bends.forEach((b, i) => {
-    zone(b.L, b.L);
+    zone(feedL[i], b.L); // compensated material straight ↦ CAD straight
     const s0 = m;
     // Material wrapped on the die: clr·rad(angleLoad) of tube maps onto clr·rad(A) of the part.
     zone(b.clr * info[i].angleLoad * DEG, b.clr * b.A * DEG);
     layoutBends.push({ s0, s1: m });
   });
-  zone(lra.tail, lra.tail);
+  zone(tailL, lra.tail);
   if (tailScrap > 0) zone(tailScrap, 0);
   const cutLength = m;
   const realZones = zones.filter((z) => z.m1 > z.m0);
@@ -161,7 +178,7 @@ export function planProcess({ tube, lra, material, machine, options = {} }) {
     breakpoints.push(z.m0 + (Math.min(Math.max(k, z.p0), z.p1) - z.p0) * (z.m1 - z.m0) / (z.p1 - z.p0));
   }
   breakpoints.sort((a, b) => a - b);
-  const layout = { cutLength, frontScrap, tailScrap, bends: layoutBends, wallAt, breakpoints };
+  const layout = { cutLength, frontScrap, tailScrap, tailLength: tailL, bends: layoutBends, wallAt, breakpoints };
 
   // ─── 5. Stack tooling ───
   const stacks = groups.map((g, k) => {
@@ -202,9 +219,11 @@ export function planProcess({ tube, lra, material, machine, options = {} }) {
   if (worst.mandrelType === 'none') {
     mandrel = { type: 'none', diameter: 0, balls: 0, pitch: 0, ballWidth: 0, shankLength: 0, noseProjection: 0, rodLength: 0, retract: 0, clearance: null };
   } else {
-    // The mandrel must pass the smallest ID that slides over it: max wall over [s0_0, cutLength]
-    // (wallAt is piecewise linear, so the max is at an end or a breakpoint).
-    const sStart = layoutBends[0].s0;
+    // The mandrel must pass the smallest ID that slides over it. At load the front end sits at the
+    // tangent with the mandrel nose inside it, and every station from the front end onward is fed
+    // over the head, so the design wall is the max over [0, cutLength] (wallAt is piecewise linear:
+    // the max is at an end or a breakpoint).
+    const sStart = 0;
     let tPass = Math.max(wallAt(sStart), wallAt(cutLength));
     for (const b of breakpoints) if (b >= sStart && b <= cutLength) tPass = Math.max(tPass, wallAt(b));
     const clearance = opts.mandrelClearance ?? Math.max(0.1 * tPass, 0.15);
@@ -262,12 +281,13 @@ export function planProcess({ tube, lra, material, machine, options = {} }) {
     if (!clampOK[i]) {
       notes.push('Recta corta para mordaza: se usa material de sujeción (scrap) o mordaza corta');
       if (i === 0) notes.push(`Se agregan ${f1(frontScrap)} mm de material de sujeción al frente (se recorta después)`);
-      else warnings.push(`Doblez ${i + 1}: recta de ${f1(b.L)} mm menor que la mordaza (${f1(clampLen[stackOf[i]])} mm); requiere mordaza corta o especial`);
+      else warnings.push(`Doblez ${i + 1}: recta de ${f1(feedL[i])} mm menor que la mordaza (${f1(clampLen[stackOf[i]])} mm); requiere mordaza corta o especial`);
     }
     const boostPct = opts.boost === 'auto' ? x.rec.boostPct : Number(opts.boost);
     return {
       index: i, stack: stackOf[i], angle: b.A, angleLoad: x.angleLoad, springback: x.springback,
       clrAfter: x.clrAfter, boostPct, bendSpeed: mach.bendSpeed * f, clampOK: clampOK[i], wall: x.t, notes,
+      feedLength: feedL[i], feedCompensation: b.L - feedL[i],
     };
   });
   if (material.family === 'AHSS') assumptions.push(`Velocidad de doblado ×${isMS(material) ? SPEED.ms : SPEED.ahss} por ${isMS(material) ? 'acero martensítico' : 'AHSS'}`);

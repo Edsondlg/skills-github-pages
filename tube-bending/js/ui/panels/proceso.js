@@ -155,8 +155,8 @@ export function mount(el, ctx) {
     h('div', { class: 'pnl-scroll' },
       h('table', { class: 'pnl-table pp-table' },
         h('thead', null, h('tr', null, [
-          ['n.º'], ['A final', '°'], ['A carga', '°'], ['Springback', '°'], ['CLR recup.', 'mm'], ['Velocidad', '°/s'], ['Boost', '%'], ['Mordaza'],
-        ].map(([t, u], i) => h('th', { scope: 'col', class: i === 0 || i === 7 ? null : 'num' }, t, u ? h('span', { class: 'pp-unit' }, u) : null)))),
+          ['n.º'], ['A final', '°'], ['A carga', '°'], ['Springback', '°'], ['CLR recup.', 'mm'], ['Avance', 'mm'], ['Comp.', 'mm'], ['Velocidad', '°/s'], ['Boost', '%'], ['Mordaza'],
+        ].map(([t, u], i) => h('th', { scope: 'col', class: i === 0 || i === 9 ? null : 'num' }, t, u ? h('span', { class: 'pp-unit' }, u) : null)))),
         sbBody)));
 
   // ── Secuencia ─────────────────────────────────────────────────────────────────────────────
@@ -267,9 +267,11 @@ export function mount(el, ctx) {
       h('th', { scope: 'row', class: 'pp-n' }, String(i + 1)),
       h('td', { class: 'num' }, fmt(b.angle, 2)), h('td', { class: 'num' }, fmt(b.angleLoad, 2)),
       h('td', { class: 'num' }, fmt(b.springback, 2)), h('td', { class: 'num' }, fmt(b.clrAfter, 1)),
+      h('td', { class: 'num', title: 'Recta de material avanzada antes del doblez (compensada por recuperación elástica)' }, fmt(b.feedLength, 1)),
+      h('td', { class: 'num', title: 'Acortamiento del avance para conservar los puntos de intersección del CAD' }, b.feedCompensation ? `−${fmt(b.feedCompensation, 2)}` : '0'),
       h('td', { class: 'num' }, fmt(b.bendSpeed, 0)), h('td', { class: 'num' }, fmt(b.boostPct, 0)),
       h('td', null, b.clampOK ? pill('ok', 'OK') : h('span', { title: 'La recta frente al doblez es más corta que la mordaza' }, pill('warning', 'Corta')))));
-    setChildren(sbBody, sbRows.length ? sbRows : h('tr', null, h('td', { colspan: '8', class: 'pnl-empty' }, 'Sin dobleces.')));
+    setChildren(sbBody, sbRows.length ? sbRows : h('tr', null, h('td', { colspan: '10', class: 'pnl-empty' }, 'Sin dobleces.')));
     lastSel = undefined;
   }
 

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { importStepTube } from '../js/tube-extract.js';
-import { lraFromTube, centerlineFromLRA, lraLength, DEG } from '../js/geometry.js';
+import { lraFromTube, centerlineFromLRA, lraLength, xyzTable, DEG } from '../js/geometry.js';
 import { buildKinematics } from '../js/kinematics.js';
 import { getMaterial } from '../js/materials.js';
 import { planProcess } from '../js/process.js';
@@ -30,12 +30,16 @@ for (const { name, tube } of fixtures) {
       near(pb.clrAfter, lra.bends[i].clr * pb.angleLoad / pb.angle, 1e-9);
       near(plan.stacks[pb.stack].clr, lra.bends[i].clr, 0.01, 'stack clr');
     });
-    near(layout.bends[0].s0, layout.frontScrap + lra.bends[0].L, 1e-9);
+    near(layout.bends[0].s0, layout.frontScrap + plan.bends[0].feedLength, 1e-9);
+    // springback feed compensation: straights shortened by (clrAfter − clr)·tan(A/2) of both neighbours
+    const dT = plan.bends.map((pb, i) => (pb.angle < 179.5 ? (pb.clrAfter - lra.bends[i].clr) * Math.tan(pb.angle * DEG / 2) : 0));
+    plan.bends.forEach((pb, i) => near(pb.feedLength, Math.max(0, lra.bends[i].L - dT[i] - (i ? dT[i - 1] : 0)), 1e-9, 'feedLength'));
+    near(layout.tailLength, Math.max(0, lra.tail - dT[dT.length - 1]), 1e-9, 'tailLength');
     const feeds = sequence.phases.filter((p) => p.type === 'feed');
     assert.equal(feeds.length, lra.bends.length);
     feeds.forEach((f, i) => near(f.params.distance, layout.bends[i].s0 - (i ? layout.bends[i - 1].s1 : 0), 1e-9, 'feed'));
     const arcs = layout.bends.reduce((a, b) => a + b.s1 - b.s0, 0);
-    near(feeds.reduce((a, f) => a + f.params.distance, 0) + arcs + lra.tail + layout.tailScrap, layout.cutLength, 1e-9, 'cut');
+    near(feeds.reduce((a, f) => a + f.params.distance, 0) + arcs + layout.tailLength + layout.tailScrap, layout.cutLength, 1e-9, 'cut');
     // phases ordered, starts cumulative, total = Σ durations
     const ph = sequence.phases;
     assert.equal(ph[0].type, 'load'); assert.equal(ph[ph.length - 1].type, 'unload');
@@ -107,6 +111,8 @@ test('wallAt: front B reads the profile reversed and bend arcs are stretched by 
   near(planA.layout.wallAt((s0 + s1) / 2), 1.5, 1e-9, 'stretched arc midpoint');
   near(planA.layout.wallAt(s0 + 0.25 * (s1 - s0)), 1.25, 1e-9);
   near(planA.bends[0].wall, 1.5, 1e-9);
+  // the 3 mm front end is fed over the mandrel head at load: the mandrel must fit the smallest ID
+  near(planA.mandrel.diameter, 38.1 - 2 * 3 - planA.mandrel.clearance, 1e-9, 'mandrel sized to the thick front end');
   const lraB = lraFromTube(tube, { front: 'B' });
   const planB = planProcess({ tube, lra: lraB, material });
   near(planB.layout.wallAt(planB.layout.frontScrap + 1), 1, 1e-9);
@@ -119,10 +125,10 @@ test('scrap: short first straight adds front scrap = clamp length − L0; short 
   const lra = { front: 'A', bends: [{ L: 20, R: 0, A: 90, clr: 50.8 }, { L: 200, R: 90, A: 90, clr: 50.8 }], tail: 30 };
   const plan = planProcess({ tube, lra, material });
   const Lc = plan.stacks[0].clampDie.length;
-  near(plan.layout.frontScrap, Lc - 20, 1e-9);
+  near(plan.layout.frontScrap, Lc - plan.bends[0].feedLength, 1e-9);
   assert.equal(plan.bends[0].clampOK, false); assert.equal(plan.bends[1].clampOK, true);
   assert.ok(plan.bends[0].notes.some((n) => n.includes('Recta corta para mordaza')));
-  near(plan.layout.tailScrap, plan.collet.gripLength + Math.max(25.4, 20) - 30, 1e-9);
+  near(plan.layout.tailScrap, plan.collet.gripLength + Math.max(25.4, 20) - plan.layout.tailLength, 1e-9);
   near(plan.layout.wallAt(0), 1.2, 1e-12);
 });
 
@@ -165,7 +171,7 @@ for (const { name, tube } of fixtures) {
       const ph = plan.sequence.phases;
       const tEnd = ph.filter((p) => p.type === 'return').pop();
       near(tEnd.start + tEnd.duration, plan.sequence.totalTime - ph[ph.length - 1].duration, 1e-9);
-      const relaxed = { ...lra, bends: lra.bends.map((b, i) => ({ ...b, clr: plan.bends[i].clrAfter })) };
+      const relaxed = { ...lra, tail: plan.layout.tailLength, bends: lra.bends.map((b, i) => ({ ...b, L: plan.bends[i].feedLength, clr: plan.bends[i].clrAfter })) };
       const total = lraLength(relaxed);
       near(total, plan.layout.cutLength - plan.layout.frontScrap - plan.layout.tailScrap, 1e-6);
       const n = 400, step = total / n;
@@ -175,4 +181,42 @@ for (const { name, tube } of fixtures) {
       assert.ok(rms < 0.1, `RMS ${rms}`);
     });
   }
+}
+
+// The finished part (after springback) keeps the CAD intersection points: lines through the
+// straights of the final kinematic part intersect where the CAD vertices are.
+for (const name of ['soporte_3d_hsla', 'escape_5_dobleces', 'travesano_calibre_variable']) {
+  test(`springback compensation keeps the CAD intersection points: ${name}`, () => {
+    const { tube } = fx(name);
+    const lra = lraFromTube(tube, { front: 'A' });
+    const plan = planProcess({ tube, lra, material });
+    assert.ok(plan.bends.every((b) => b.springback > 0.1), 'springback present');
+    const kin = buildKinematics({ lra, plan, OD: tube.OD });
+    const ret = plan.sequence.phases.filter((p) => p.type === 'return').pop();
+    const t = ret.start + ret.duration;
+    const { layout } = plan;
+    // straight k spans material [a_k, b_k]: k = 0 front … nb tail
+    const nb = layout.bends.length;
+    const spans = [];
+    for (let k = 0; k <= nb; k++) {
+      const a = k === 0 ? layout.frontScrap : layout.bends[k - 1].s1;
+      const b = k === nb ? layout.cutLength - layout.tailScrap : layout.bends[k].s0;
+      spans.push([a, b]);
+    }
+    const pts = (s) => kin.centerlineAt(t, Float64Array.from(s));
+    const lines = spans.map(([a, b]) => { const [p, q] = pts([a, b]); return { p, d: q.map((v, i) => v - p[i]) }; });
+    const vertex = (l1, l2) => { // midpoint of closest approach of two lines
+      const w = l1.p.map((v, i) => v - l2.p[i]);
+      const dot = (x, y) => x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+      const a = dot(l1.d, l1.d), b = dot(l1.d, l2.d), c = dot(l2.d, l2.d), d = dot(l1.d, w), e = dot(l2.d, w);
+      const den = a * c - b * b, s1 = (b * e - c * d) / den, s2 = (a * e - b * d) / den;
+      return l1.p.map((v, i) => (v + s1 * l1.d[i] + l2.p[i] + s2 * l2.d[i]) / 2);
+    };
+    const [front] = pts([layout.frontScrap]); const [rear] = pts([layout.cutLength - layout.tailScrap]);
+    const sim = [front, ...lines.slice(0, nb).map((l, k) => vertex(l, lines[k + 1])), rear];
+    const cad = xyzTable(tube).map((r) => [r.x, r.y, r.z]);
+    assert.equal(sim.length, cad.length);
+    const rms = properRigidRms(sim, cad);
+    assert.ok(rms < 0.05, `vertex RMS ${rms}`);
+  });
 }
