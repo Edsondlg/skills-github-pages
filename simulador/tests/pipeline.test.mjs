@@ -419,3 +419,19 @@ test('imagen: cuadrado negro trazado a escala', { skip: !realModule('src/importe
   const a = profileSummary(profile, defaultOpState(profile)).netArea;
   assert.ok(Math.abs(a - 256) / 256 < 0.1, `área ${a}`);
 });
+
+test('prepareProfile omite segmentos inválidos con aviso y conserva el resto', () => {
+  const L = (p0, p1) => ({ type: 'line', p0, p1, meta: { layer: '0' } });
+  const drawing = {
+    format: 'dxf', fileName: 'x.dxf', units: { name: 'mm', toMM: 1, detected: true }, layers: [{ name: '0' }], texts: [], warnings: [], stats: {},
+    segments: [
+      L([0, 0], [50, 0]), L([50, 0], [50, 30]), L([50, 30], [0, 30]), L([0, 30], [0, 0]),
+      { type: 'spline', degree: 2, ctrl: [[10, 10], [20, 20], [30, 10], [40, 20]], knots: [0, 0, 0, 2, 1, 1, 1], weights: null, meta: { layer: '0' } },
+      { type: 'circle', c: [25, 15], r: 0, ccw: true, meta: { layer: '0' } },
+    ],
+  };
+  const p = prepareProfile(drawing, { detectFrame: false });
+  assert.equal(p.regions.length, 1);
+  assert.ok(p.warnings.some((w) => /Se omitieron 1 entidad\(es\) con geometría inválida: spline con nudos decrecientes/.test(w)), p.warnings.join(' | '));
+  assert.ok(p.warnings.some((w) => /círculo con radio ≤ 0/.test(w)));
+});

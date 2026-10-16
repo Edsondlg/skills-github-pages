@@ -2,6 +2,7 @@
 // medición de distancias, teselado y exportación STEP/STL. Corre en Node y en el navegador.
 import opencascade from 'replicad-opencascadejs';
 import * as R from 'replicad';
+import { segInvalidReason } from '../geom2d/segments.js';
 
 let oc = null;
 let current = null; // { shape, faces: Map, edges: Map, vertices: Map }
@@ -1026,9 +1027,31 @@ function ocError(e) {
   return new Error(`Error interno de OpenCascade${d ? ` (${d})` : ''}. Revise la geometría del plano.`);
 }
 
+// Rechaza geometría corrupta antes de evaluarla: una spline con nudos inconsistentes
+// puede dejar la evaluación NURBS en un bucle sin fin.
+function validateJobSegments(job) {
+  const check = (loop, where) => {
+    for (const s of loop?.segs || []) {
+      const why = segInvalidReason(s);
+      if (why) throw new Error(`${where}: ${why}.`);
+    }
+  };
+  for (const r of job.regions || []) {
+    check(r.outer, `Región «${r.id}»`);
+    for (const h of r.holes || []) check(h.loop, `Región «${r.id}», agujero`);
+  }
+  for (const v of job.multiview?.views || []) {
+    for (const r of v.regions || []) {
+      check(r.outer, `Vista ${v.role}`);
+      for (const h of r.holes || []) check(h.loop ?? h, `Vista ${v.role}, agujero`);
+    }
+  }
+}
+
 export function build(job) {
   needOC();
   if (!job || !job.mode) throw new Error('Trabajo de construcción sin modo.');
+  validateJobSegments(job);
   const warnings = [];
   const t0 = now();
   let shape;

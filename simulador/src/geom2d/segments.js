@@ -45,6 +45,47 @@ function checkSpline(s) {
     throw new Error('Spline inválida: grado, puntos de control, nudos o pesos inconsistentes');
 }
 
+const finite = (...xs) => xs.every((x) => Number.isFinite(x));
+const finitePt = (q) => Array.isArray(q) && q.length >= 2 && finite(q[0], q[1]);
+
+/**
+ * Motivo por el que un segmento es inválido (texto en español) o null si es válido.
+ * Evita que geometría corrupta (radios ≤ 0, NaN, splines con nudos inconsistentes)
+ * llegue al cálculo o al motor CAD, donde podría colgar la evaluación.
+ */
+export function segInvalidReason(s) {
+  if (!s || typeof s !== 'object') return 'segmento vacío';
+  switch (s.type) {
+    case 'line':
+      return finitePt(s.p0) && finitePt(s.p1) ? null : 'línea con coordenadas no numéricas';
+    case 'arc':
+      if (!finitePt(s.c) || !finite(s.r, s.a0, s.a1)) return 'arco con datos no numéricos';
+      return s.r > 0 ? null : 'arco con radio ≤ 0';
+    case 'circle':
+      if (!finitePt(s.c) || !finite(s.r)) return 'círculo con datos no numéricos';
+      return s.r > 0 ? null : 'círculo con radio ≤ 0';
+    case 'ellipse':
+      if (!finitePt(s.c) || !finite(s.rx, s.ry, s.rot, s.t0, s.t1)) return 'elipse con datos no numéricos';
+      return s.rx > 0 && s.ry > 0 ? null : 'elipse con semieje ≤ 0';
+    case 'bezier':
+      return Array.isArray(s.pts) && s.pts.length === 4 && s.pts.every(finitePt) ? null : 'Bézier con puntos inválidos';
+    case 'spline': {
+      const { degree: p, ctrl, knots, weights } = s;
+      if (!Number.isInteger(p) || p < 1) return 'spline con grado inválido';
+      if (!Array.isArray(ctrl) || !ctrl.every(finitePt)) return 'spline con puntos de control inválidos';
+      const n = ctrl.length;
+      if (n < p + 1) return 'spline con menos puntos de control que grado + 1';
+      if (!Array.isArray(knots) || knots.length !== n + p + 1 || !knots.every((k) => Number.isFinite(k))) return 'spline con vector de nudos de longitud incorrecta';
+      for (let i = 1; i < knots.length; i++) if (knots[i] < knots[i - 1]) return 'spline con nudos decrecientes';
+      if (!(knots[p] < knots[n])) return 'spline con dominio de parámetro vacío';
+      if (weights != null && (!Array.isArray(weights) || weights.length !== n || !weights.every((w) => Number.isFinite(w) && w > 0))) return 'spline con pesos inválidos';
+      return null;
+    }
+    default:
+      return `tipo de segmento desconocido (${s.type})`;
+  }
+}
+
 function findSpan(U, n, p, u) {
   if (u >= U[n]) {
     let k = n - 1;

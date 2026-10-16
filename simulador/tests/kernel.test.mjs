@@ -328,10 +328,19 @@ test('10b. esquina R0,5 con la línea vecina 0,009 mm desplazada: el cilindro co
   assert.ok(r.props.valid);
 });
 
-test('10c. excepción de OCCT (agujero de radio negativo): mensaje en español legible', () => {
+test('10c. geometría inválida (agujero de radio negativo): mensaje en español legible', () => {
+  // La validación de entrada lo rechaza antes de llegar a OpenCascade.
   assert.throws(
     () => K.build(extrudeJob([{ id: 'p', outer: rect(0, 0, 10, 10), holes: [{ loop: circle([5, 5], -1), op: 'through' }] }], 1)),
-    (e) => /^Error interno de OpenCascade \(.+\)\. Revise/.test(e.message) && !/object|WebAssembly/.test(e.message),
+    (e) => /Región «p», agujero: círculo con radio ≤ 0/.test(e.message) && !/object|WebAssembly/.test(e.message),
+  );
+});
+
+test('10d. spline con nudos decrecientes: error inmediato en lugar de colgarse', { timeout: 10000 }, () => {
+  const bad = { type: 'spline', degree: 2, ctrl: [[0, 0], [10, 10], [20, 0], [30, 10]], knots: [0, 0, 0, 2, 1, 1, 1], weights: null };
+  assert.throws(
+    () => K.build(extrudeJob([{ id: 'leva', outer: { segs: [bad, L([30, 10], [0, 0])] }, holes: [] }], 1)),
+    /Región «leva»: spline con nudos decrecientes/,
   );
 });
 

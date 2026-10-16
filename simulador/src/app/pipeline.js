@@ -7,7 +7,7 @@
 //   let op = defaultOpState(profile);             // la UI edita op (regiones, agujeros, modo…)
 //   const result = await kernel.build(makeJob(profile, op));
 //   const part = computeAll({ build: result, profile, op, material, pricePerKg, blankMargin });
-import { segTransform, segLength } from '../geom2d/segments.js';
+import { segTransform, segLength, segInvalidReason } from '../geom2d/segments.js';
 import { buildLoops, loopInfo, buildRegions, bboxOfSegments } from '../geom2d/loops.js';
 import { parseDXF } from '../importers/dxf.js';
 import { parseSVG } from '../importers/svg.js';
@@ -165,7 +165,10 @@ export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = 
   const scale = (s) => (toMM === 1 ? s : segTransform(s, m));
   const segments = [], axisLines = [];
   let hiddenRemoved = 0, dashedRemoved = 0;
+  const invalid = new Map(); // motivo → cantidad
   for (const s of drawing.segments) {
+    const why = segInvalidReason(s);
+    if (why) { invalid.set(why, (invalid.get(why) || 0) + 1); continue; }
     const layer = s.meta?.layer, dashed = !!s.meta?.dashed;
     // Candidatos a eje: líneas de trazos de capas visibles, aunque se filtren después por ser trazos.
     if (dashed && s.type === 'line' && !hidden.has(layer)) {
@@ -181,6 +184,7 @@ export function prepareProfile(drawing, { unitOverride = 'auto', ignoreDashed = 
   const L = buildLoops(segments, { tol });
   const loopInfos = L.loops.map((l) => loopInfo(l, chordTol));
   const warnings = [];
+  for (const [why, n] of invalid) warnings.push(`Se omitieron ${n} entidad(es) con geometría inválida: ${why}.`);
   let frame;
   if (Array.isArray(frameLoops)) frame = [...new Set(frameLoops)].filter((i) => Number.isInteger(i) && i >= 0 && i < L.loops.length).sort((a, b) => a - b);
   else if (detectFrame) {

@@ -5,6 +5,7 @@ import {
   segStart, segEnd, segPointAt, segReverse, segLength, segBBox, segTessellate, segAreaTerm,
   segMomentTerms, segTransform, isClosedSegment, segClosestPoint, segSnapPoints, segSweep,
 } from '../src/geom2d/segments.js';
+import { segInvalidReason } from '../src/geom2d/segments.js';
 import { buildLoops, loopInfo, orientLoop, pointInPolygon, buildRegions, bboxOfSegments } from '../src/geom2d/loops.js';
 // Tiempo de CPU del proceso (ms): no depende de la carga de otros procesos, a diferencia del reloj.
 const cpuMs = () => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; };
@@ -341,4 +342,27 @@ test('10. punto más cercano y puntos de enganche', () => {
   const ce = segClosestPoint(e, [0, 3]);
   nearP(ce.q, [0, 1], 1e-9);
   assert.equal(segSnapPoints(e).length, 5);
+});
+
+test('segInvalidReason: detecta geometría corrupta sin evaluarla', () => {
+  const ok = [
+    { type: 'line', p0: [0, 0], p1: [1, 0] },
+    { type: 'arc', c: [0, 0], r: 1, a0: 0, a1: 1, ccw: true },
+    { type: 'circle', c: [0, 0], r: 2, ccw: true },
+    { type: 'ellipse', c: [0, 0], rx: 2, ry: 1, rot: 0, t0: 0, t1: Math.PI, ccw: true },
+    { type: 'bezier', pts: [[0, 0], [1, 1], [2, 1], [3, 0]] },
+    { type: 'spline', degree: 3, ctrl: [[0, 0], [1, 1], [2, 1], [3, 0]], knots: [0, 0, 0, 0, 1, 1, 1, 1], weights: null },
+  ];
+  for (const s of ok) assert.equal(segInvalidReason(s), null, s.type);
+  const bad = [
+    [{ type: 'line', p0: [0, NaN], p1: [1, 0] }, /no numéricas/],
+    [{ type: 'circle', c: [0, 0], r: 0, ccw: true }, /radio ≤ 0/],
+    [{ type: 'arc', c: [0, 0], r: -1, a0: 0, a1: 1, ccw: true }, /radio ≤ 0/],
+    [{ type: 'ellipse', c: [0, 0], rx: 2, ry: 0, rot: 0, t0: 0, t1: 1, ccw: true }, /semieje/],
+    [{ type: 'spline', degree: 3, ctrl: [[0, 0], [1, 1], [2, 0]], knots: [0, 0, 0, 1, 1, 1], weights: null }, /menos puntos de control/],
+    [{ type: 'spline', degree: 2, ctrl: [[0, 0], [1, 1], [2, 0], [3, 1]], knots: [0, 0, 0, 2, 1, 1, 1], weights: null }, /decrecientes/],
+    [{ type: 'spline', degree: 2, ctrl: [[0, 0], [1, 1], [2, 0]], knots: [0, 0, 0, 0, 0, 0], weights: null }, /dominio/],
+    [{ type: 'spline', degree: 2, ctrl: [[0, 0], [1, 1], [2, 0]], knots: [0, 0, 0, 1, 1, 1], weights: [1, 0, 1] }, /pesos/],
+  ];
+  for (const [s, re] of bad) assert.match(segInvalidReason(s), re);
 });
