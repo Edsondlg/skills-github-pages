@@ -101,6 +101,16 @@ try {
   r = await rows();
   assert.ok(r[0].text.includes(`${v.d.toFixed(3)} mm`), 'vuelta a mm');
 
+  // Borrar una cota 2D suelta: la otra sigue en la lista y en el plano.
+  await page.mouse.click(...p2.b);
+  await page.mouse.click(...p2.a);
+  await page.waitForFunction(() => document.querySelectorAll('#measureList li').length === 4);
+  r = await rows();
+  await page.click(`#measureList li[data-measure="${r[2].id}"] [data-action="delete"]`);
+  await page.waitForFunction(() => document.querySelectorAll('#measureList li').length === 3);
+  assert.deepEqual((await rows()).map((x) => x.id), [r[0].id, r[1].id, r[3].id], 'solo se borra la cota elegida');
+  assert.deepEqual(await page.evaluate(() => window.__app.view2d._measures.map((m) => `2d-${m.id}`)), [r[3].id], 'cota restante en el plano');
+
   // Borrar una fila (la inspección fijada), copiar, CSV de mediciones
   await page.click(`#measureList li[data-measure="${r[1].id}"] [data-action="delete"]`);
   await page.waitForFunction(() => document.querySelectorAll('#measureList li').length === 2);

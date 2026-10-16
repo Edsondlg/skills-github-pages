@@ -16,8 +16,9 @@
 //                                                         clic en vacío → regionIndex = loopIndex = -1
 //   loopClick   { loopIndex, regionIndex, shiftKey, p }   clic dentro de un agujero (regionIndex = región dueña)
 //   window      { minX, minY, maxX, maxY }                rectángulo arrastrado (modo 'window')
-//   measure     { kind: 'distance', p1, p2, d, dx, dy, angleDeg, snap1, snap2 }   (snapN = tipo de referencia o null)
-//             | { kind: 'radius', r, diameter, c, p, segIndex }                   (Mayús+clic en círculo/arco)
+//   measure     { id, kind: 'distance', p1, p2, d, dx, dy, angleDeg, snap1, snap2 }   (snapN = tipo de referencia o null)
+//             | { id, kind: 'radius', r, diameter, c, p, segIndex }                   (Mayús+clic en círculo/arco)
+//               id: entero estable; removeMeasure(id) borra esa cota.
 //   calibrate   { p1, p2, d }                             dos puntos referenciados, en unidades del plano
 //   axisPick    { p, d, segIndex }                        p = inicio de la línea, d = dirección unitaria
 //   cursor      { x, y, snap: null | { p, kind } } | null (null al salir del lienzo)
@@ -171,6 +172,8 @@ export class View2D {
     this._view = { scale: 4, tx: 0, ty: 0 };
     this._fitScale = 4;
     this._measures = [];
+    this._measureSeq = 0; // id estable de cada cota
+    this._needFit = false; // fit() pedido con el lienzo oculto (0×0): se repite al hacerse visible
     this._pending = null; // primer punto de medida/calibración
     this._calib = null;
     this._axis = null;
@@ -303,6 +306,15 @@ export class View2D {
     return this;
   }
 
+  /** Borra una cota por su id (el del evento 'measure'). Devuelve true si existía. */
+  removeMeasure(id) {
+    const i = this._measures.findIndex((m) => m.id === id);
+    if (i < 0) return false;
+    this._measures.splice(i, 1);
+    this._requestRender();
+    return true;
+  }
+
   clearMeasures() {
     this._measures = [];
     this._pending = null;
@@ -341,6 +353,7 @@ export class View2D {
   fit() {
     const bb = this._visibleBBox();
     const m = 36, W = this._w, H = this._h;
+    this._needFit = W <= 1 || H <= 1;
     const bw = Math.max(bb.maxX - bb.minX, 1e-9), bh = Math.max(bb.maxY - bb.minY, 1e-9);
     let s = Math.min(Math.max(W - 2 * m, 10) / bw, Math.max(H - 2 * m, 10) / bh);
     if (!isFinite(s) || s <= 0) s = 4;
@@ -365,7 +378,7 @@ export class View2D {
     this._dpr = dpr;
     this.canvas.width = Math.round(W * dpr);
     this.canvas.height = Math.round(H * dpr);
-    if (first) this.fit();
+    if (first || (this._needFit && W > 1 && H > 1)) this.fit();
     else {
       this._view.tx = W / 2 - c[0] * this._view.scale;
       this._view.ty = H / 2 + c[1] * this._view.scale;
@@ -816,7 +829,7 @@ export class View2D {
           const c = this._pickSeg(w, SNAP_PX / this._view.scale, (s) => s.type === 'circle' || s.type === 'arc');
           if (c) {
             const s = this._segs[c.i];
-            const m = { kind: 'radius', r: s.r, diameter: 2 * s.r, c: s.c.slice(), p: c.q, segIndex: c.i };
+            const m = { id: ++this._measureSeq, kind: 'radius', r: s.r, diameter: 2 * s.r, c: s.c.slice(), p: c.q, segIndex: c.i };
             this._measures.push(m);
             this._emit('measure', m);
             return;
@@ -826,7 +839,7 @@ export class View2D {
         if (!this._pending) this._pending = { p, kind: sn ? sn.kind : null };
         else {
           const a = this._pending.p, dx = p[0] - a[0], dy = p[1] - a[1];
-          const m = { kind: 'distance', p1: a, p2: p, d: Math.hypot(dx, dy), dx, dy, angleDeg: (Math.atan2(dy, dx) * 180) / Math.PI, snap1: this._pending.kind, snap2: sn ? sn.kind : null };
+          const m = { id: ++this._measureSeq, kind: 'distance', p1: a, p2: p, d: Math.hypot(dx, dy), dx, dy, angleDeg: (Math.atan2(dy, dx) * 180) / Math.PI, snap1: this._pending.kind, snap2: sn ? sn.kind : null };
           this._pending = null;
           this._measures.push(m);
           this._emit('measure', m);

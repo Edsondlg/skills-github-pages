@@ -15,12 +15,13 @@
  *           #infoFormat #infoUnits #infoScale #infoEntities #infoClosed #infoRegions #infoOpenRow #infoOpen
  *           #selDrawingUnits #inpJoinTol #chkIgnoreAux #layerCount #layerList
  *           #imageSection #rngThreshold #thresholdValue #chkThresholdAuto #chkInvert #inpPxScale #btnCalibrate
+ *           #frameRow #frameInfo #chkIncludeFrame (marco del plano)
  *   Paso 2  #stepOp #stepOpSummary #opSeg (extrude|revolve|multiview)
  *           #panelExtrude #inpThickness #selGauge #thicknessChips #chkSymmetric #regionCount #regionList
  *           #inpFilletVertical #inpFilletTop #inpChamferTop
  *           #panelRevolve #selAxis #btnPickAxis #axisReadout #rngAngle #inpAngle
  *           #panelMultiview #slotTop #slotFront #slotRight #slotLeft
- *             (cada .slot[data-role]: [data-action=define], [data-action=clear], .slot-status)
+ *             (cada .slot[data-role]: [data-action=define], [data-action=clear], .slot-status) #mvWarn
  *   Paso 3  #stepMaterial #stepMaterialSummary #selMaterial #densityReadout #densityField #inpDensity
  *           #inpPrice #inpBlankMargin
  *   Pie     #btnGenerate #chkAutoUpdate

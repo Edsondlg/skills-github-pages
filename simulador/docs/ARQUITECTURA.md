@@ -232,7 +232,7 @@ new View2D(container)
   .setDrawing({ segments, texts, layers }, { loops, loopInfos, open, regions })
   .setLayerVisible(name, bool) / .setRegionState(i, { included, selected, role }) / .fit()
   .setMode('select'|'window'|'measure'|'calibrate'|'axis') / .showAxis({ p, d } | null)
-  .showViewBoxes([{ role, box: { minX, minY, maxX, maxY } }]) / .clearMeasures()
+  .showViewBoxes([{ role, box: { minX, minY, maxX, maxY } }]) / .removeMeasure(id) / .clearMeasures()
   .on('regionClick'|'loopClick'|'window'|'measure'|'calibrate'|'axisPick'|'cursor', cb)
 ```
 

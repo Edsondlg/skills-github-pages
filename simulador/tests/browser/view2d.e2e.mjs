@@ -80,6 +80,7 @@ try {
   assert.deepEqual([ev.p1, ev.p2, ev.snap1, ev.snap2], [[6, 0], [150, 74], 'end', 'end']);
   assert.equal(ev.dx, 144);
   assert.equal(ev.dy, 74);
+  const distId = ev.id;
   await page.keyboard.down('Shift');
   await clickWorld([12 + 4.25 * Math.cos(1), 12 + 4.25 * Math.sin(1)]);
   await page.keyboard.up('Shift');
@@ -87,6 +88,11 @@ try {
   assert.equal(ev.kind, 'radius');
   assert.equal(ev.r, 4.25);
   assert.deepEqual(ev.c, [12, 12]);
+  // Cada cota lleva un id estable; removeMeasure(id) borra solo esa.
+  assert.ok(Number.isInteger(distId) && ev.id !== distId, `ids ${distId}, ${ev.id}`);
+  assert.equal(await page.evaluate((id) => view.removeMeasure(id), distId), true);
+  assert.deepEqual(await page.evaluate(() => view._measures.map((m) => m.id)), [ev.id], 'queda la cota de radio');
+  assert.equal(await page.evaluate((id) => view.removeMeasure(id), distId), false);
 
   // Calibración: dos extremos referenciados.
   await page.evaluate(() => view.setMode('calibrate'));
@@ -146,6 +152,15 @@ try {
   assert.notDeepEqual(await T(), T0);
   await page.evaluate(() => view.fit());
   assert.deepEqual(await T(), T0, 'fit() restaura');
+  // Plano cargado con el lienzo oculto (0×0): se encuadra al hacerse visible.
+  await page.evaluate(() => (view.container.style.display = 'none'));
+  await frame();
+  await page.evaluate(() => loadDemo());
+  assert.ok((await T()).scale < T0.scale / 10, 'encuadre con el lienzo oculto');
+  await page.evaluate(() => (view.container.style.display = ''));
+  await frame();
+  await frame();
+  assert.deepEqual(await T(), T0, 'encuadre al hacerse visible');
 
   // 1) Capturas en ambos temas (ratón fuera del dibujo).
   await page.mouse.move(rect.x + rect.w - 5, rect.y + 5);

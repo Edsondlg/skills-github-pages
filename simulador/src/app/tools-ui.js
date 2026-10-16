@@ -97,8 +97,7 @@ export function initToolsUi(app) {
   const fmt = () => app.getState().formatter;
   let list3d = [];
   const sys3d = new Map(); // id → sistema de unidades con el que MeasureTools escribió el texto
-  let list2d = []; // [{ id: '2d-n', m: payload }]
-  let seq2d = 0;
+  let list2d = []; // [{ id: '2d-<id de View2D>', m: payload }]
   let inspect = null;
 
   const listEl = $('measureList');
@@ -150,7 +149,7 @@ export function initToolsUi(app) {
   });
 
   view2d.on('measure', (m) => {
-    list2d.push({ id: `2d-${++seq2d}`, m });
+    list2d.push({ id: `2d-${m.id}`, m });
     render();
   });
   // View2D borra sus cotas en clearMeasures() y setDrawing(): la lista las sigue.
@@ -173,10 +172,11 @@ export function initToolsUi(app) {
     const id = b.closest('[data-measure]').dataset.measure;
     if (id.startsWith('3d-')) measure.remove(Number(id.slice(3)));
     else {
-      // View2D no borra una cota suelta: se borran todas las cotas 2D.
-      const n = list2d.length;
-      view2d.clearMeasures();
-      if (n > 1) ui.toast(`Se borraron las ${n} cotas 2D (la vista 2D las borra juntas).`, { type: 'info' });
+      const e2 = list2d.find((x) => x.id === id);
+      if (!e2) return;
+      view2d.removeMeasure(e2.m.id);
+      list2d = list2d.filter((x) => x !== e2);
+      render();
     }
   });
 
