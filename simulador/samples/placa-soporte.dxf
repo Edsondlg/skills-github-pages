@@ -1,0 +1,1072 @@
+  0
+SECTION
+  2
+HEADER
+  9
+$ACADVER
+  1
+AC1015
+  9
+$INSUNITS
+ 70
+4
+  9
+$MEASUREMENT
+ 70
+1
+  0
+ENDSEC
+  0
+SECTION
+  2
+TABLES
+  0
+TABLE
+  2
+LTYPE
+ 70
+3
+  0
+LTYPE
+100
+AcDbSymbolTableRecord
+100
+AcDbLinetypeTableRecord
+  2
+CONTINUOUS
+ 70
+0
+  3
+Solid line
+ 72
+65
+ 73
+0
+ 40
+0
+  0
+LTYPE
+100
+AcDbSymbolTableRecord
+100
+AcDbLinetypeTableRecord
+  2
+CENTER
+ 70
+0
+  3
+Center ____ _ ____ _
+ 72
+65
+ 73
+4
+ 40
+50.800000000000004
+ 49
+31.75
+ 49
+-6.35
+ 49
+6.35
+ 49
+-6.35
+  0
+LTYPE
+100
+AcDbSymbolTableRecord
+100
+AcDbLinetypeTableRecord
+  2
+HIDDEN
+ 70
+0
+  3
+Hidden __ __ __
+ 72
+65
+ 73
+2
+ 40
+9.524999999999999
+ 49
+6.35
+ 49
+-3.175
+  0
+ENDTAB
+  0
+TABLE
+  2
+LAYER
+ 70
+7
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+0
+ 70
+0
+ 62
+7
+  6
+CONTINUOUS
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+CONTORNO
+ 70
+0
+ 62
+7
+  6
+CONTINUOUS
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+BARRENOS
+ 70
+0
+ 62
+3
+  6
+CONTINUOUS
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+EJES
+ 70
+0
+ 62
+1
+  6
+CENTER
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+OCULTAS
+ 70
+0
+ 62
+6
+  6
+HIDDEN
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+COTAS
+ 70
+0
+ 62
+2
+  6
+CONTINUOUS
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+TEXTO
+ 70
+0
+ 62
+4
+  6
+CONTINUOUS
+  0
+ENDTAB
+  0
+ENDSEC
+  0
+SECTION
+  2
+BLOCKS
+  0
+BLOCK
+  8
+0
+100
+AcDbBlockBegin
+  2
+*D1
+ 70
+1
+ 10
+0
+ 20
+0
+ 30
+0
+  3
+*D1
+  0
+LINE
+  5
+100
+100
+AcDbEntity
+  8
+0
+100
+AcDbLine
+ 10
+0
+ 20
+0
+ 30
+0
+ 11
+0
+ 21
+-12
+ 31
+0
+  0
+LINE
+  5
+101
+100
+AcDbEntity
+  8
+0
+100
+AcDbLine
+ 10
+150
+ 20
+0
+ 30
+0
+ 11
+150
+ 21
+-12
+ 31
+0
+  0
+LINE
+  5
+102
+100
+AcDbEntity
+  8
+0
+100
+AcDbLine
+ 10
+0
+ 20
+-12
+ 30
+0
+ 11
+150
+ 21
+-12
+ 31
+0
+  0
+ENDBLK
+  8
+0
+100
+AcDbBlockEnd
+  0
+BLOCK
+  8
+0
+100
+AcDbBlockBegin
+  2
+*D2
+ 70
+1
+ 10
+0
+ 20
+0
+ 30
+0
+  3
+*D2
+  0
+LINE
+  5
+103
+100
+AcDbEntity
+  8
+0
+100
+AcDbLine
+ 10
+150
+ 20
+0
+ 30
+0
+ 11
+150
+ 21
+0
+ 31
+0
+  0
+LINE
+  5
+104
+100
+AcDbEntity
+  8
+0
+100
+AcDbLine
+ 10
+150
+ 20
+80
+ 30
+0
+ 11
+150
+ 21
+0
+ 31
+0
+  0
+LINE
+  5
+105
+100
+AcDbEntity
+  8
+0
+100
+AcDbLine
+ 10
+150
+ 20
+0
+ 30
+0
+ 11
+150
+ 21
+0
+ 31
+0
+  0
+ENDBLK
+  8
+0
+100
+AcDbBlockEnd
+  0
+BLOCK
+  8
+0
+100
+AcDbBlockBegin
+  2
+*D3
+ 70
+1
+ 10
+0
+ 20
+0
+ 30
+0
+  3
+*D3
+  0
+LINE
+  5
+106
+100
+AcDbEntity
+  8
+0
+100
+AcDbLine
+ 10
+65
+ 20
+0
+ 30
+0
+ 11
+65
+ 21
+-6
+ 31
+0
+  0
+LINE
+  5
+107
+100
+AcDbEntity
+  8
+0
+100
+AcDbLine
+ 10
+85
+ 20
+0
+ 30
+0
+ 11
+85
+ 21
+-6
+ 31
+0
+  0
+LINE
+  5
+108
+100
+AcDbEntity
+  8
+0
+100
+AcDbLine
+ 10
+65
+ 20
+-6
+ 30
+0
+ 11
+85
+ 21
+-6
+ 31
+0
+  0
+ENDBLK
+  8
+0
+100
+AcDbBlockEnd
+  0
+ENDSEC
+  0
+SECTION
+  2
+ENTITIES
+  0
+LWPOLYLINE
+  5
+109
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbPolyline
+ 90
+12
+ 70
+1
+ 10
+6
+ 20
+0
+ 10
+65
+ 20
+0
+ 10
+65
+ 20
+15
+ 10
+85
+ 20
+15
+ 10
+85
+ 20
+0
+ 10
+144
+ 20
+0
+ 42
+0.41421356237309503
+ 10
+150
+ 20
+6
+ 10
+150
+ 20
+74
+ 42
+0.41421356237309503
+ 10
+144
+ 20
+80
+ 10
+6
+ 20
+80
+ 42
+0.41421356237309503
+ 10
+0
+ 20
+74
+ 10
+0
+ 20
+6
+ 42
+0.41421356237309503
+  0
+LWPOLYLINE
+  5
+10A
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbPolyline
+ 90
+4
+ 70
+1
+ 10
+65
+ 20
+62
+ 10
+85
+ 20
+62
+ 42
+1
+ 10
+85
+ 20
+72
+ 10
+65
+ 20
+72
+ 42
+1
+  0
+CIRCLE
+  5
+10B
+100
+AcDbEntity
+  8
+BARRENOS
+100
+AcDbCircle
+ 10
+15
+ 20
+15
+ 30
+0
+ 40
+4.25
+  0
+LINE
+  5
+10C
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+8
+ 20
+15
+ 30
+0
+ 11
+22
+ 21
+15
+ 31
+0
+  0
+LINE
+  5
+10D
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+15
+ 20
+8
+ 30
+0
+ 11
+15
+ 21
+22
+ 31
+0
+  0
+CIRCLE
+  5
+10E
+100
+AcDbEntity
+  8
+BARRENOS
+100
+AcDbCircle
+ 10
+135
+ 20
+15
+ 30
+0
+ 40
+4.25
+  0
+LINE
+  5
+10F
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+128
+ 20
+15
+ 30
+0
+ 11
+142
+ 21
+15
+ 31
+0
+  0
+LINE
+  5
+110
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+135
+ 20
+8
+ 30
+0
+ 11
+135
+ 21
+22
+ 31
+0
+  0
+CIRCLE
+  5
+111
+100
+AcDbEntity
+  8
+BARRENOS
+100
+AcDbCircle
+ 10
+15
+ 20
+65
+ 30
+0
+ 40
+4.25
+  0
+LINE
+  5
+112
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+8
+ 20
+65
+ 30
+0
+ 11
+22
+ 21
+65
+ 31
+0
+  0
+LINE
+  5
+113
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+15
+ 20
+58
+ 30
+0
+ 11
+15
+ 21
+72
+ 31
+0
+  0
+CIRCLE
+  5
+114
+100
+AcDbEntity
+  8
+BARRENOS
+100
+AcDbCircle
+ 10
+135
+ 20
+65
+ 30
+0
+ 40
+4.25
+  0
+LINE
+  5
+115
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+128
+ 20
+65
+ 30
+0
+ 11
+142
+ 21
+65
+ 31
+0
+  0
+LINE
+  5
+116
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+135
+ 20
+58
+ 30
+0
+ 11
+135
+ 21
+72
+ 31
+0
+  0
+CIRCLE
+  5
+117
+100
+AcDbEntity
+  8
+BARRENOS
+100
+AcDbCircle
+ 10
+75
+ 20
+40
+ 30
+0
+ 40
+12.5
+  0
+LINE
+  5
+118
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+59
+ 20
+40
+ 30
+0
+ 11
+91
+ 21
+40
+ 31
+0
+  0
+LINE
+  5
+119
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+75
+ 20
+24
+ 30
+0
+ 11
+75
+ 21
+56
+ 31
+0
+  0
+LINE
+  5
+11A
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+58
+ 20
+67
+ 30
+0
+ 11
+92
+ 21
+67
+ 31
+0
+  0
+DIMENSION
+  5
+11B
+100
+AcDbEntity
+  8
+COTAS
+100
+AcDbDimension
+  2
+*D1
+ 10
+75
+ 20
+-12
+ 30
+0
+ 70
+1
+100
+AcDbAlignedDimension
+ 13
+0
+ 23
+0
+ 33
+0
+ 14
+150
+ 24
+0
+ 34
+0
+  0
+DIMENSION
+  5
+11C
+100
+AcDbEntity
+  8
+COTAS
+100
+AcDbDimension
+  2
+*D2
+ 10
+162
+ 20
+40
+ 30
+0
+ 70
+1
+100
+AcDbAlignedDimension
+ 13
+150
+ 23
+0
+ 33
+0
+ 14
+150
+ 24
+80
+ 34
+0
+  0
+DIMENSION
+  5
+11D
+100
+AcDbEntity
+  8
+COTAS
+100
+AcDbDimension
+  2
+*D3
+ 10
+75
+ 20
+-6
+ 30
+0
+ 70
+1
+100
+AcDbAlignedDimension
+ 13
+65
+ 23
+0
+ 33
+0
+ 14
+85
+ 24
+0
+ 34
+0
+  0
+TEXT
+  5
+11E
+100
+AcDbEntity
+  8
+TEXTO
+100
+AcDbText
+ 10
+0
+ 20
+90
+ 30
+0
+ 40
+5
+  1
+PLACA SOPORTE  e=3 mm  4x%%c8.5
+ 50
+0
+100
+AcDbText
+  0
+MTEXT
+  5
+11F
+100
+AcDbEntity
+  8
+TEXTO
+100
+AcDbMText
+ 10
+0
+ 20
+100
+ 30
+0
+ 40
+3.5
+ 71
+1
+  1
+{\fArial|b0;Material:} Acero SAE 1010\PTolerancia \U+00B10.1
+  0
+ENDSEC
+  0
+EOF

@@ -1,0 +1,640 @@
+  0
+SECTION
+  2
+HEADER
+  9
+$ACADVER
+  1
+AC1015
+  9
+$INSUNITS
+ 70
+4
+  9
+$MEASUREMENT
+ 70
+1
+  0
+ENDSEC
+  0
+SECTION
+  2
+TABLES
+  0
+TABLE
+  2
+LTYPE
+ 70
+3
+  0
+LTYPE
+100
+AcDbSymbolTableRecord
+100
+AcDbLinetypeTableRecord
+  2
+CONTINUOUS
+ 70
+0
+  3
+Solid line
+ 72
+65
+ 73
+0
+ 40
+0
+  0
+LTYPE
+100
+AcDbSymbolTableRecord
+100
+AcDbLinetypeTableRecord
+  2
+CENTER
+ 70
+0
+  3
+Center ____ _ ____ _
+ 72
+65
+ 73
+4
+ 40
+50.800000000000004
+ 49
+31.75
+ 49
+-6.35
+ 49
+6.35
+ 49
+-6.35
+  0
+LTYPE
+100
+AcDbSymbolTableRecord
+100
+AcDbLinetypeTableRecord
+  2
+HIDDEN
+ 70
+0
+  3
+Hidden __ __ __
+ 72
+65
+ 73
+2
+ 40
+9.524999999999999
+ 49
+6.35
+ 49
+-3.175
+  0
+ENDTAB
+  0
+TABLE
+  2
+LAYER
+ 70
+7
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+0
+ 70
+0
+ 62
+7
+  6
+CONTINUOUS
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+CONTORNO
+ 70
+0
+ 62
+7
+  6
+CONTINUOUS
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+BARRENOS
+ 70
+0
+ 62
+3
+  6
+CONTINUOUS
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+EJES
+ 70
+0
+ 62
+1
+  6
+CENTER
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+OCULTAS
+ 70
+0
+ 62
+6
+  6
+HIDDEN
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+COTAS
+ 70
+0
+ 62
+2
+  6
+CONTINUOUS
+  0
+LAYER
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+TEXTO
+ 70
+0
+ 62
+4
+  6
+CONTINUOUS
+  0
+ENDTAB
+  0
+ENDSEC
+  0
+SECTION
+  2
+BLOCKS
+  0
+ENDSEC
+  0
+SECTION
+  2
+ENTITIES
+  0
+LINE
+  5
+100
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+0
+ 20
+0
+ 30
+0
+ 11
+0
+ 21
+9
+ 31
+0
+  0
+LINE
+  5
+101
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+0
+ 20
+9
+ 30
+0
+ 11
+1
+ 21
+10
+ 31
+0
+  0
+LINE
+  5
+102
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+1
+ 20
+10
+ 30
+0
+ 11
+38
+ 21
+10
+ 31
+0
+  0
+ARC
+  5
+103
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbCircle
+ 10
+38
+ 20
+12
+ 30
+0
+ 40
+2
+100
+AcDbArc
+ 50
+270
+ 51
+360
+  0
+LINE
+  5
+104
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+40
+ 20
+12
+ 30
+0
+ 11
+40
+ 21
+14
+ 31
+0
+  0
+LINE
+  5
+105
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+40
+ 20
+14
+ 30
+0
+ 11
+41
+ 21
+15
+ 31
+0
+  0
+LINE
+  5
+106
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+41
+ 20
+15
+ 30
+0
+ 11
+79
+ 21
+15
+ 31
+0
+  0
+LINE
+  5
+107
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+79
+ 20
+15
+ 30
+0
+ 11
+80
+ 21
+14
+ 31
+0
+  0
+LINE
+  5
+108
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+80
+ 20
+14
+ 30
+0
+ 11
+80
+ 21
+12
+ 31
+0
+  0
+LINE
+  5
+109
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+80
+ 20
+12
+ 30
+0
+ 11
+100
+ 21
+12
+ 31
+0
+  0
+LINE
+  5
+10A
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+100
+ 20
+12
+ 30
+0
+ 11
+100
+ 21
+10.5
+ 31
+0
+  0
+LINE
+  5
+10B
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+100
+ 20
+10.5
+ 30
+0
+ 11
+103
+ 21
+10.5
+ 31
+0
+  0
+LINE
+  5
+10C
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+103
+ 20
+10.5
+ 30
+0
+ 11
+103
+ 21
+12
+ 31
+0
+  0
+LINE
+  5
+10D
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+103
+ 20
+12
+ 30
+0
+ 11
+119
+ 21
+12
+ 31
+0
+  0
+LINE
+  5
+10E
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+119
+ 20
+12
+ 30
+0
+ 11
+120
+ 21
+11
+ 31
+0
+  0
+LINE
+  5
+10F
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+120
+ 20
+11
+ 30
+0
+ 11
+120
+ 21
+0
+ 31
+0
+  0
+LINE
+  5
+110
+100
+AcDbEntity
+  8
+CONTORNO
+100
+AcDbLine
+ 10
+120
+ 20
+0
+ 30
+0
+ 11
+0
+ 21
+0
+ 31
+0
+  0
+LINE
+  5
+111
+100
+AcDbEntity
+  8
+EJES
+100
+AcDbLine
+ 10
+-10
+ 20
+0
+ 30
+0
+ 11
+130
+ 21
+0
+ 31
+0
+  0
+TEXT
+  5
+112
+100
+AcDbEntity
+  8
+TEXTO
+100
+AcDbText
+ 10
+0
+ 20
+-10
+ 30
+0
+ 40
+4
+  1
+FLECHA - MEDIO PERFIL (REVOLUCION EN X)
+ 50
+0
+100
+AcDbText
+  0
+ENDSEC
+  0
+EOF
