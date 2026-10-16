@@ -13,6 +13,8 @@ import { detectFormat, importText, importImage, prepareProfile, defaultOpState, 
 import { SAMPLES } from './samples.js';
 import { renderPlano, renderRegions, renderSlots, renderProps, axisText } from './panels.js';
 import { createAppApi } from './app-api.js';
+import { initToolsUi } from './tools-ui.js';
+import { initExportUi } from './export-ui.js';
 
 const $ = ui.$;
 const PREFS_KEY = 'plano3d.prefs';
@@ -90,6 +92,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initOpen(examplesMenu);
   initOperation();
   initViews();
+  initToolsUi(api);
+  initExportUi(api);
   ui.setEmpty('2d', true);
   ui.setEmpty('3d', true);
   ui.setPropsVisible(false);
@@ -676,6 +680,7 @@ function setUnits(v) {
     renderSlots(S.op, S.F);
   }
   if (S.build) recomputeProps();
+  api._emitUnits();
 }
 
 function initViews() {

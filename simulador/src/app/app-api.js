@@ -9,6 +9,7 @@
 export function createAppApi(ctx) {
   const built = new Set();
   const measureListeners = new Set();
+  const unitsListeners = new Set();
   const { S, actions } = ctx;
   return {
     kernel: ctx.kernel,
@@ -26,6 +27,8 @@ export function createAppApi(ctx) {
     onMeasureChange: (cb) => (measureListeners.add(cb), () => measureListeners.delete(cb)),
     /** Ventana de una vista ('top'|'front'|'right'|'left') en mm del plano; null la borra. */
     setViewWindow: (role, box) => actions.setViewWindow(role, box),
+    /** cb(formatter) tras cambiar mm/in (state.formatter ya actualizado). */
+    onUnitsChange: (cb) => (unitsListeners.add(cb), () => unitsListeners.delete(cb)),
     /** 'x' | 'y' | { p:[x,y], d:[dx,dy] } (línea en mm). */
     setRevolveAxis: (axis) => actions.setRevolveAxis(axis),
     /** Escala de la imagen trazada (mm por píxel). */
@@ -37,6 +40,7 @@ export function createAppApi(ctx) {
     loadSample: (id) => actions.loadSample(id),
     openFiles: (files) => actions.openFiles(files),
     _emitBuilt: () => { for (const cb of built) cb(S.partData, S.build); },
+    _emitUnits: () => { for (const cb of unitsListeners) cb(S.F); },
     _emitMeasure: (list, extra) => { for (const cb of measureListeners) cb(list, extra); },
   };
 }
