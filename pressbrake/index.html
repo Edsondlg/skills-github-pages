@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador de Plegado</title>
+<meta name="description" content="Simulación de proceso de plegadora CNC a partir de archivos STEP: desdoblado, secuencia, tonelaje, tiempos y costo por pieza con visualización 3D.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path d="M4 6h24v6H4z" fill="var(--accent)"/><path d="M13 12h6l-3 7z" fill="var(--fg)"/><path d="M4 22l8-3 4 3 4-3 8 3v4H4z" fill="var(--muted)"/></svg>
+    <div><strong>Simulador de Plegado</strong><span>Press brake · STEP → proceso, tiempo y costo</span></div>
+  </div>
+  <div class="actions">
+    <label class="btn primary" for="file">Cargar STEP</label>
+    <input id="file" type="file" accept=".step,.stp,.STEP,.STP" hidden>
+    <select id="sample" class="btn" title="Piezas de ejemplo">
+      <option value="">Piezas de ejemplo…</option>
+      <option value="samples/bracket.step">Soporte (3 dobleces, 2 sentidos)</option>
+      <option value="samples/canal.step">Canal con pestaña (3 dobleces)</option>
+      <option value="samples/tray.step">Charola (4 dobleces)</option>
+    </select>
+    <button id="btnCsv" class="btn" disabled>CSV</button>
+    <button id="btnPrint" class="btn" disabled>Reporte</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel left" id="params">
+    <details open>
+      <summary>Material</summary>
+      <label>Material <select id="p-material"></select></label>
+      <label>Precio material <span class="unit" data-cur>/kg</span><input id="p-matPrice" type="number" step="0.01"></label>
+      <label>Merma / esqueleto <span class="unit">%</span><input id="p-scrap" type="number" step="1"></label>
+      <label>Factor K <span class="unit">auto si vacío</span><input id="p-k" type="number" step="0.01" min="0.2" max="0.5" placeholder="auto"></label>
+    </details>
+    <details open>
+      <summary>Máquina y herramental</summary>
+      <label>Capacidad <span class="unit">t</span><input id="p-machineTons" type="number"></label>
+      <label>Largo de cama <span class="unit">mm</span><input id="p-machineLength" type="number"></label>
+      <label>Abertura V <span class="unit">× espesor (auto)</span><input id="p-vFactor" type="number" step="1" placeholder="auto"></label>
+      <label>Ángulo punzón <span class="unit">°</span><input id="p-punchAngle" type="number"></label>
+      <label>Aproximación <span class="unit">mm</span><input id="p-approachMm" type="number"></label>
+      <label>Vel. rápida <span class="unit">mm/s</span><input id="p-vFast" type="number"></label>
+      <label>Vel. de doblado <span class="unit">mm/s</span><input id="p-vBend" type="number" step="0.5"></label>
+      <label>Vel. retorno <span class="unit">mm/s</span><input id="p-vReturn" type="number"></label>
+    </details>
+    <details>
+      <summary>Manipulación (operador)</summary>
+      <label>Carga <span class="unit">s</span><input id="p-load" type="number" step="0.5"></label>
+      <label>Reposición <span class="unit">s</span><input id="p-reposition" type="number" step="0.5"></label>
+      <label>Giro <span class="unit">s</span><input id="p-rotate" type="number" step="0.5"></label>
+      <label>Volteo <span class="unit">s</span><input id="p-flip" type="number" step="0.5"></label>
+      <label>Descarga <span class="unit">s</span><input id="p-unload" type="number" step="0.5"></label>
+      <label>Tope trasero <span class="unit">s</span><input id="p-backgauge" type="number" step="0.1"></label>
+    </details>
+    <details open>
+      <summary>Costos</summary>
+      <label>Moneda <select id="p-currency"><option>USD</option><option>MXN</option><option>EUR</option></select></label>
+      <label>Tarifa máquina <span class="unit" data-cur>/h</span><input id="p-machineRate" type="number" step="1"></label>
+      <label>Tarifa operador <span class="unit" data-cur>/h</span><input id="p-operatorRate" type="number" step="1"></label>
+      <label>Eficiencia (OEE) <span class="unit">%</span><input id="p-efficiency" type="number" step="1"></label>
+      <label>Preparación <span class="unit">min</span><input id="p-setupMin" type="number" step="1"></label>
+      <label>Lote <span class="unit">piezas</span><input id="p-batch" type="number" step="1" min="1"></label>
+      <label class="check"><input id="p-includeCut" type="checkbox"> Incluir corte láser del blank</label>
+      <label>Corte <span class="unit" data-cur>/m</span><input id="p-cutPerM" type="number" step="0.05"></label>
+      <label>Perforación <span class="unit" data-cur>/pza</span><input id="p-piercePrice" type="number" step="0.01"></label>
+      <label>Margen <span class="unit">%</span><input id="p-margin" type="number" step="1"></label>
+    </details>
+  </aside>
+
+  <section class="stage">
+    <div id="viewport" class="viewport">
+      <div class="drop" id="drop">
+        <div>
+          <h2>Arrastra tu archivo STEP aquí</h2>
+          <p>o usa <b>Cargar STEP</b> / una pieza de ejemplo. El archivo se procesa en tu navegador; no se sube a ningún servidor.</p>
+        </div>
+      </div>
+      <div class="hud" id="hud" hidden>
+        <div class="hud-step" id="hudStep">—</div>
+        <div class="hud-grid">
+          <div><span>Y</span><b id="hudY">—</b></div>
+          <div><span>Ángulo</span><b id="hudAng">—</b></div>
+          <div><span>Fuerza</span><b id="hudF">—</b></div>
+          <div><span>Tiempo</span><b id="hudT">—</b></div>
+        </div>
+      </div>
+      <div class="viewbar">
+        <div class="seg" id="modeSeg">
+          <button data-mode="machine" class="on">Plegadora</button>
+          <button data-mode="part">Pieza / desarrollo</button>
+        </div>
+        <div class="seg" id="camSeg">
+          <button data-cam="wide">General</button>
+          <button data-cam="iso">Iso</button>
+          <button data-cam="front">Frente</button>
+          <button data-cam="side">Perfil</button>
+          <button data-cam="close">Detalle</button>
+        </div>
+      </div>
+      <div class="partbar" id="partbar" hidden>
+        <label>Plano <input id="foldSlider" type="range" min="0" max="1" step="0.001" value="1"> Formado</label>
+        <label class="check"><input id="hl" type="checkbox" checked> Resaltar zonas de doblez</label>
+      </div>
+      <div class="loading" id="loading" hidden><div class="spinner"></div><span id="loadingMsg">Cargando…</span></div>
+    </div>
+    <div class="transport">
+      <button id="btnPlay" class="btn icon" title="Reproducir / pausa" disabled>▶</button>
+      <button id="btnPrev" class="btn icon" title="Paso anterior" disabled>⏮</button>
+      <button id="btnNext" class="btn icon" title="Paso siguiente" disabled>⏭</button>
+      <select id="speed" class="btn" title="Velocidad">
+        <option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+      </select>
+      <div class="timeline" id="timeline"><div class="playhead" id="playhead"></div></div>
+      <span class="clock" id="clock">0.0 / 0.0 s</span>
+    </div>
+  </section>
+
+  <aside class="panel right" id="results">
+    <div class="empty" id="resEmpty">Carga una pieza para ver el análisis.</div>
+    <div id="res" hidden>
+      <div class="partname" id="partName"></div>
+      <div class="kpis">
+        <div class="kpi hero"><span>Costo por pieza</span><b id="kCost">—</b><small id="kCostSub"></small></div>
+        <div class="kpi"><span>Ciclo / pieza</span><b id="kCycle">—</b><small id="kCycleSub"></small></div>
+        <div class="kpi"><span>Piezas / hora</span><b id="kPph">—</b></div>
+        <div class="kpi"><span>Dobleces</span><b id="kBends">—</b><small id="kBendsSub"></small></div>
+        <div class="kpi"><span>Tonelaje máx.</span><b id="kTons">—</b><small id="kTonsSub"></small></div>
+        <div class="kpi"><span>Peso pieza</span><b id="kMass">—</b><small id="kMassSub"></small></div>
+      </div>
+      <h3>Desglose de costo</h3>
+      <div class="costbar" id="costBar"></div>
+      <table class="mini" id="costTable"></table>
+      <h3>Pieza y desarrollo</h3>
+      <table class="mini" id="partTable"></table>
+      <h3>Secuencia de doblado</h3>
+      <div class="tablewrap"><table class="seq" id="seqTable"></table></div>
+      <h3>Lote</h3>
+      <table class="mini" id="batchTable"></table>
+      <div id="warnings"></div>
+      <p class="fine">Estimaciones de ingeniería: tonelaje por fórmula de doblado al aire, radio/factor K por regla práctica, recuperación elástica por material. Valida contra tu máquina y herramental.</p>
+    </div>
+  </aside>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

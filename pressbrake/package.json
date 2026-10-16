@@ -1,0 +1,7 @@
+{
+  "name": "pressbrake-sim",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "devDependencies": { "occt-import-js": "0.0.23" }
+}
