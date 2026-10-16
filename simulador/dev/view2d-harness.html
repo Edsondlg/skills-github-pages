@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Vista 2D — arnés</title>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; background: #16191e; color: #c9d1d9; }
+  body.light { background: #f7f8fa; color: #1f2328; }
+  #bar { display: flex; gap: 6px; align-items: center; padding: 6px 10px; border-bottom: 1px solid #8884; }
+  #bar button { font: inherit; padding: 3px 10px; border: 1px solid #8886; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+  #bar button.on { background: #3d8bfd; border-color: #3d8bfd; color: #fff; }
+  #status { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
+  #view { flex: 1; min-height: 0; position: relative; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button data-mode="select" class="on">Seleccionar</button>
+  <button data-mode="window">Ventana</button>
+  <button data-mode="measure">Medir</button>
+  <button data-mode="calibrate">Calibrar</button>
+  <button data-mode="axis">Eje</button>
+  <button id="fit">Encuadrar</button>
+  <button id="clear">Borrar medidas</button>
+  <button id="theme">Tema</button>
+  <span id="status"></span>
+</div>
+<div id="view"></div>
+<!-- Generado por tests/browser/view2d.e2e.mjs (esbuild, IIFE) -->
+<script src="build/view2d-harness.js"></script>
+</body>
+</html>
